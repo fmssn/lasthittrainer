@@ -206,22 +206,18 @@ export class World {
     unit.orderTargetId = null;
     unit.attackTargetId = null;
     unit.attackMove = false;
-    this.cancelBackswing(unit);
+    this.cancelSwing(unit);
   }
 
   orderAttack(unit: Unit, target: Unit) {
     if (!this.canTarget(unit, target)) return;
     if (unit.attackTargetId === target.id && unit.phase === 'windup') return;
     // Re-targeting mid-swing restarts the wind-up rather than steering it.
-    if (unit.phase === 'windup') {
-      unit.phase = 'idle';
-      unit.phaseTimer = 0;
-    }
     unit.orderTargetId = target.id;
     unit.attackTargetId = target.id;
     unit.moveTarget = null;
     unit.attackMove = false;
-    this.cancelBackswing(unit);
+    this.cancelSwing(unit);
     if (unit.kind === 'hero' && target.kind === 'hero') this.triggerCreepAggro(unit, target);
   }
 
@@ -230,7 +226,7 @@ export class World {
     unit.orderTargetId = null;
     unit.attackTargetId = null;
     unit.attackMove = true;
-    this.cancelBackswing(unit);
+    this.cancelSwing(unit);
   }
 
   orderStop(unit: Unit) {
@@ -238,12 +234,20 @@ export class World {
     unit.orderTargetId = null;
     unit.attackTargetId = null;
     unit.attackMove = false;
-    this.cancelBackswing(unit);
+    this.cancelSwing(unit);
   }
 
-  /** Backswing is cancellable in Dota; the wind-up is not. */
-  private cancelBackswing(unit: Unit) {
-    if (unit.phase === 'backswing') {
+  /**
+   * Give up on the swing in progress. A stop or move issued during the wind-up
+   * cancels the attack outright in Dota — that is what makes starting a swing
+   * and calling it off possible — and the backswing goes the same way.
+   *
+   * Doing it here rather than leaving `updateCombat` to notice a null target
+   * is what keeps the stats honest: that path bills a wasted swing, which is
+   * meant to mean a creep died on you, not a swing you chose to call off.
+   */
+  private cancelSwing(unit: Unit) {
+    if (unit.phase === 'windup' || unit.phase === 'backswing') {
       unit.phase = 'idle';
       unit.phaseTimer = 0;
     }
