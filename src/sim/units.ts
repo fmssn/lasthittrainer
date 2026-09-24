@@ -160,6 +160,7 @@ export function spawnUnit(tpl: UnitTemplate, team: Team, pos: Vec2, rng: () => n
     attackCooldown: 0,
     aggroTargetId: null,
     aggroTimer: 0,
+    aggroCooldown: 0,
     incomingDamage: 0,
   };
 }

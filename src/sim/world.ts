@@ -1,8 +1,9 @@
 import type { FloatingText, KillEvent, Projectile, Team, Unit, Vec2 } from './types.ts';
 import {
   ACQUISITION_RANGE,
+  AGGRO_COOLDOWN,
   AGGRO_DURATION,
-  AGGRO_TRIGGER_RANGE,
+  aggroTriggerRange,
   DENY_THRESHOLD,
   LANE_HALF_WIDTH,
   LEASH_RANGE,
@@ -210,6 +211,10 @@ export class World {
   }
 
   orderAttack(unit: Unit, target: Unit) {
+    // The aggro check rides on the order, not on the attack landing, so it runs
+    // before canTarget turns away an order on a healthy ally. Dropping aggro by
+    // clicking your own creep has to work whatever shape that creep's HP is in.
+    if (unit.kind === 'hero') this.runAggroCheck(unit, target);
     if (!this.canTarget(unit, target)) return;
     if (unit.attackTargetId === target.id && unit.phase === 'windup') return;
     // Re-targeting mid-swing restarts the wind-up rather than steering it.
@@ -218,7 +223,6 @@ export class World {
     unit.moveTarget = null;
     unit.attackMove = false;
     this.cancelSwing(unit);
-    if (unit.kind === 'hero' && target.kind === 'hero') this.triggerCreepAggro(unit, target);
   }
 
   orderAttackMove(unit: Unit, point: Vec2) {
@@ -254,19 +258,45 @@ export class World {
   }
 
   /**
-   * Right-clicking an enemy hero pulls every enemy creep within range onto you
-   * for a couple of seconds. This is the mechanic that makes "free harass"
-   * expensive, and the one most players never internalise.
+   * The creep aggro check, run once per attack order a hero issues.
+   *
+   * Lane creeps rank the heroes near them by threat: one attacking the creep or
+   * its allies outranks one that is idle, and a hero attacking its *own* allies
+   * ranks below both. So the same order does opposite things depending on whose
+   * side the target is on — ordering an attack on an enemy hero pulls the wave
+   * onto you, and ordering one on a unit of your own drops you to the bottom of
+   * the list and hands the wave back. That is the whole pull/give-back dance,
+   * and it is why a deny quietly sheds aggro as a side effect.
+   *
+   * The order alone is enough either way: the attack never has to land, and on
+   * an ally it never does. Only hero-type targets count, and the system is on a
+   * per-hero cooldown, so a pull cannot be immediately re-pulled.
    */
-  triggerCreepAggro(attacker: Unit, victim: Unit) {
+  runAggroCheck(attacker: Unit, target: Unit) {
     if (!this.config.aggroEnabled) return;
+
+    // Only the pull is on cooldown. Giving aggro back has to stay available
+    // inside the 2.3 s you are holding it, or the mechanic could never be used.
+    const hostile = target.team !== attacker.team;
+    if (hostile) {
+      if (attacker.aggroCooldown > 0) return;
+      attacker.aggroCooldown = AGGRO_COOLDOWN;
+    }
     for (const u of this.units.values()) {
       if (!u.alive || u.kind === 'hero') continue;
-      if (u.team !== victim.team) continue;
-      const radius = u.kind === 'tower' ? u.attackRange : AGGRO_TRIGGER_RANGE;
+      if (u.team === attacker.team) continue;
+      const radius = u.kind === 'tower' ? u.attackRange : aggroTriggerRange(u.kind);
       if (dist(u.pos, attacker.pos) > radius) continue;
-      u.aggroTargetId = attacker.id;
-      u.aggroTimer = AGGRO_DURATION;
+
+      if (hostile) {
+        u.aggroTargetId = attacker.id;
+        u.aggroTimer = AGGRO_DURATION;
+      } else if (u.aggroTargetId === attacker.id) {
+        // Lowest threat now: give up the forced aggro and re-acquire normally.
+        u.aggroTargetId = null;
+        u.aggroTimer = 0;
+        if (u.attackTargetId === attacker.id) u.attackTargetId = null;
+      }
     }
   }
 
@@ -301,6 +331,7 @@ export class World {
         if (u.aggroTimer <= 0) u.aggroTargetId = null;
       }
       if (u.attackCooldown > 0) u.attackCooldown -= dt;
+      if (u.aggroCooldown > 0) u.aggroCooldown -= dt;
       if (u.hp < u.maxHp) u.hp = Math.min(u.maxHp, u.hp + u.hpRegen * dt);
       if (u.kind !== 'hero') runCreepAi(this, u);
     }
@@ -488,8 +519,8 @@ export class World {
     this.pushFloater(target.pos, `-${Math.round(dmg)}`, source.kind === 'hero' ? '#ffd479' : '#b9c4cf');
 
     // Creeps retaliate against enemy *creeps* that hit them. A hero attacking a
-    // creep draws no aggro in Dota — only attacking an enemy hero does, which is
-    // handled by triggerCreepAggro.
+    // creep draws no aggro in Dota — only an attack order on a hero does, which
+    // is handled by runAggroCheck.
     if (target.kind !== 'hero' && source.kind !== 'hero' && target.team !== source.team && !target.aggroTargetId) {
       if (!this.get(target.attackTargetId)) target.attackTargetId = source.id;
     }

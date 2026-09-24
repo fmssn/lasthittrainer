@@ -6,7 +6,8 @@ import type { World } from './sim/world.ts';
  * Dota-style controls:
  *   right click        move, or attack an enemy under the cursor
  *   A                  attack or deny whatever the cursor is over, else
- *                      attack-move there — the only way to deny your own creep
+ *                      attack-move there. The only way to deny your own creep,
+ *                      and — aimed at one — the way to hand creep aggro back
  *   S                  stop (cancels the backswing, frees the next order)
  *   scroll             zoom
  *   space              pause
@@ -113,7 +114,11 @@ export class Input {
       // them. What the cursor is over is attacked or denied, empty lane is an
       // attack-move, which is the same pair of orders A + LMB used to give.
       const target = this.renderer.pickUnit(this.lastScreen, world, world.player);
-      if (target && world.canTarget(world.player, target)) {
+      // Ally or enemy, the order goes to orderAttack: an attack order on your
+      // own creep is what hands creep aggro back, and it does that whether or
+      // not the creep is low enough to actually deny. Only empty lane is an
+      // attack-move.
+      if (target) {
         world.orderAttack(world.player, target);
       } else {
         world.orderAttackMove(world.player, this.renderer.toWorld(this.lastScreen));

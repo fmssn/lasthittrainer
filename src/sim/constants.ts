@@ -6,6 +6,8 @@
  * reference sheet, `difficulty.ts` holds the training modifiers.
  */
 
+import type { UnitKind } from './types.ts';
+
 /** Seconds between creep waves. */
 export const WAVE_INTERVAL = 30;
 
@@ -27,8 +29,28 @@ export const LEASH_RANGE = 700;
 /** How long forced (hero-triggered) creep aggro lasts. */
 export const AGGRO_DURATION = 2.3;
 
-/** Range within which right-clicking an enemy hero pulls nearby creep aggro. */
-export const AGGRO_TRIGGER_RANGE = 500;
+/**
+ * Cooldown on the forced-aggro system, per hero. A second attack order inside
+ * this window runs no aggro check at all, which is what makes a pull a
+ * commitment rather than something you can spam back and forth.
+ */
+export const AGGRO_COOLDOWN = 3;
+
+/**
+ * Acquisition range each creep kind runs its aggro check in. Only heroes inside
+ * a creep's own range are considered, so a siege creep notices a pull from much
+ * further out than a melee one does.
+ */
+const AGGRO_TRIGGER_RANGE: Partial<Record<UnitKind, number>> = {
+  melee_creep: 500,
+  ranged_creep: 600,
+  siege_creep: 800,
+};
+
+/** Aggro-check range for `kind`; towers use their attack range instead. */
+export function aggroTriggerRange(kind: UnitKind): number {
+  return AGGRO_TRIGGER_RANGE[kind] ?? 500;
+}
 
 /** Units of lane between the two spawn points. */
 export const LANE_LENGTH = 6000;
