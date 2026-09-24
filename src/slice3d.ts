@@ -149,10 +149,16 @@ function start(asset: CreepAsset) {
     fpsAccum += dt;
     if (fpsAccum >= 0.5) {
       const alive = [...world.units.values()].filter((u) => u.alive).length;
-      const dead = views.size - [...views.values()].filter((r) => !r.view.isDead).length;
+      // Histogram of what each rig is playing: the quickest way to see that all
+      // four clips actually fire, rather than assuming the state machine works.
+      const hist: Record<string, number> = {};
+      for (const r of views.values()) hist[r.view.clip] = (hist[r.view.clip] ?? 0) + 1;
+      const clips = (['Idle', 'Walk', 'Attack', 'Death'] as const)
+        .map((c) => `${c} ${hist[c] ?? 0}`)
+        .join('  ');
       info.textContent =
-        `${Math.round(frames / fpsAccum)} fps · ${views.size} rigs (${dead} dying) · ` +
-        `${alive} units alive · t=${world.time.toFixed(0)}s · ` +
+        `${Math.round(frames / fpsAccum)} fps · ${views.size} rigs · ${alive} alive · ` +
+        `t=${world.time.toFixed(0)}s\n${clips}\n` +
         `[O] orbit ${orbit ? 'on' : 'off'} · wheel to zoom`;
       frames = 0;
       fpsAccum = 0;

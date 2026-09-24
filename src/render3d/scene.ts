@@ -15,7 +15,7 @@ export class Scene3D {
   readonly controls: OrbitControls;
 
   /** Half-width of the view in sim units. Smaller = closer. */
-  private viewSize = 900;
+  private viewSize = 620;
   private readonly target = new THREE.Vector3();
 
   constructor(canvas: HTMLCanvasElement) {
@@ -24,13 +24,13 @@ export class Scene3D {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-    this.scene.background = new THREE.Color(0x0d1418);
-    this.scene.fog = new THREE.Fog(0x0d1418, 1800, 4200);
+    this.scene.background = new THREE.Color(0x141d22);
+    this.scene.fog = new THREE.Fog(0x141d22, 2600, 5200);
 
     // Dota-ish pitch: high and tilted, but orthographic so the lane does not
     // fan out toward the edges of the screen.
     this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 12000);
-    this.camera.position.set(0, 1400, 1150);
+    this.camera.position.set(0, 1080, 1290);
     this.camera.lookAt(0, 0, 0);
 
     this.controls = new OrbitControls(this.camera, canvas);
@@ -38,8 +38,8 @@ export class Scene3D {
     this.controls.enableZoom = false; // zoom is the ortho frustum, handled below
     this.controls.enabled = false;    // opt-in, see toggleOrbit()
 
-    const sun = new THREE.DirectionalLight(0xfff0dd, 2.4);
-    sun.position.set(-600, 1500, 700);
+    const sun = new THREE.DirectionalLight(0xffeedd, 3.1);
+    sun.position.set(-700, 1500, 650);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
     const s = 1100;
@@ -52,7 +52,7 @@ export class Scene3D {
     this.scene.add(sun, sun.target);
     this.sun = sun;
 
-    this.scene.add(new THREE.HemisphereLight(0x8fb6d6, 0x2a2118, 1.1));
+    this.scene.add(new THREE.HemisphereLight(0x9ec4e0, 0x3b3226, 1.9));
 
     this.buildGround();
     this.resize();
@@ -63,7 +63,7 @@ export class Scene3D {
   private buildGround() {
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(20000, 8000),
-      new THREE.MeshStandardMaterial({ color: 0x1d2a20, roughness: 1 }),
+      new THREE.MeshStandardMaterial({ color: 0x2c3d2e, roughness: 1 }),
     );
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
@@ -72,7 +72,7 @@ export class Scene3D {
     // The lane itself, so the eye has something to track along.
     const lane = new THREE.Mesh(
       new THREE.PlaneGeometry(20000, 620),
-      new THREE.MeshStandardMaterial({ color: 0x33412f, roughness: 1 }),
+      new THREE.MeshStandardMaterial({ color: 0x47573d, roughness: 1 }),
     );
     lane.rotation.x = -Math.PI / 2;
     lane.position.y = 0.5;
@@ -96,7 +96,7 @@ export class Scene3D {
     const t = 1 - Math.pow(0.001, dt);
     this.target.lerp(new THREE.Vector3(x, 0, y), t);
 
-    const offset = new THREE.Vector3(0, 1400, 1150);
+    const offset = new THREE.Vector3(0, 1080, 1290);
     this.camera.position.copy(this.target).add(offset);
     this.camera.lookAt(this.target);
 

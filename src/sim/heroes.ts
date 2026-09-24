@@ -15,7 +15,8 @@ export interface HeroTemplate extends UnitTemplate {
  */
 const base = {
   kind: 'hero' as const,
-  hpRegen: 1.5,
+  // Level 1 regen plus the regen item every laner starts with.
+  hpRegen: 3,
   bountyMin: 0,
   bountyMax: 0,
   xp: 0,

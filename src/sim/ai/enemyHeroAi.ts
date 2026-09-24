@@ -40,13 +40,17 @@ export class EnemyHeroAi {
     this.harassCooldown -= dt;
     this.prune(world);
 
-    // Back off when it gets dangerous, and come back once it has healed. A bot
-    // that farms itself to death is not a useful sparring partner.
+    // Back off while creeps are actually chewing on it, not on a flat HP rule —
+    // a bot that sits in the fountain waiting to heal is no sparring partner.
     const frac = this.hero.hp / this.hero.maxHp;
-    if (frac < 0.35) this.retreating = true;
-    else if (frac > 0.65) this.retreating = false;
+    let threat = 0;
+    for (const u of world.units.values()) {
+      if (u.alive && u.team !== this.own && u.attackTargetId === this.hero.id) threat++;
+    }
+    if (frac < 0.25 || (threat >= 2 && frac < 0.6)) this.retreating = true;
+    else if (threat === 0 && frac > 0.4) this.retreating = false;
     if (this.retreating) {
-      world.orderMove(this.hero, { x: this.hero.pos.x - this.dir * 600, y: this.hero.pos.y });
+      world.orderMove(this.hero, { x: this.hero.pos.x - this.dir * 400, y: this.hero.pos.y });
       return;
     }
 

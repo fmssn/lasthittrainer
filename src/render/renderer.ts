@@ -32,6 +32,8 @@ export class Renderer {
     this.ctx = ctx;
     this.resize();
     window.addEventListener('resize', () => this.resize());
+    // The window event alone misses layout changes that do not resize the window.
+    new ResizeObserver(() => this.resize()).observe(canvas);
   }
 
   resize() {
@@ -51,6 +53,7 @@ export class Renderer {
     ctx.clearRect(0, 0, this.camera.viewW, this.camera.viewH);
     this.drawGround();
     this.drawLane();
+    this.drawTowerZones(world);
 
     if (world.config.showRangeRings && world.player.alive) {
       this.drawRangeRing(world.player);
@@ -117,8 +120,30 @@ export class Renderer {
 
   // ------------------------------------------------------------------ units
 
+  /** Tower range, always visible. Walking into it should be a decision. */
+  private drawTowerZones(world: World) {
+    const ctx = this.ctx;
+    for (const u of world.units.values()) {
+      if (u.kind !== 'tower') continue;
+      const s = this.camera.toScreen(u.pos);
+      ctx.strokeStyle = u.team === 'radiant' ? 'rgba(95,191,122,0.16)' : 'rgba(216,97,90,0.16)';
+      ctx.fillStyle = u.team === 'radiant' ? 'rgba(95,191,122,0.04)' : 'rgba(216,97,90,0.04)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([10, 10]);
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, u.attackRange * this.camera.scale, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+
   private drawUnit(world: World, u: Unit) {
     const ctx = this.ctx;
+    if (u.kind === 'tower') {
+      this.drawTower(u);
+      return;
+    }
     const s = this.camera.toScreen(u.pos);
     const r = Math.max(4, u.radius * this.camera.scale);
     const isPlayer = u.id === world.player.id;
@@ -193,6 +218,22 @@ export class Renderer {
     }
   }
 
+  private drawTower(u: Unit) {
+    const ctx = this.ctx;
+    const s = this.camera.toScreen(u.pos);
+    const r = Math.max(8, u.radius * this.camera.scale);
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.fillRect(s.x - r, s.y - r + r * 0.3, r * 2, r * 2);
+    ctx.fillStyle = u.team === 'radiant' ? '#24463a' : '#452a2a';
+    ctx.strokeStyle = u.team === 'radiant' ? COLORS.radiant : COLORS.dire;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.rect(s.x - r, s.y - r, r * 2, r * 2);
+    ctx.fill();
+    ctx.stroke();
+    if (u.phase === 'windup') this.drawWindup(u, s, r * 1.3);
+  }
+
   private heroColor(world: World, u: Unit): string {
     if (u.id === world.player.id) return '#2c4a5e';
     return '#4a2b33';
@@ -218,6 +259,7 @@ export class Renderer {
   // ------------------------------------------------------------ health bars
 
   private drawHealthBar(world: World, u: Unit) {
+    if (u.kind === 'tower') return;
     const ctx = this.ctx;
     const s = this.camera.toScreen(u.pos);
     const r = Math.max(4, u.radius * this.camera.scale);

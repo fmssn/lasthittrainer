@@ -147,6 +147,11 @@ export class UnitView {
     this.mixer.update(dt);
   }
 
+  /** Which clip is playing right now. Drives the debug readout on the slice page. */
+  get clip(): ClipName {
+    return this.current;
+  }
+
   get isDead() {
     return this.dead;
   }
