@@ -89,12 +89,12 @@ export class World {
     resetIds();
 
     const heroTpl = heroById(config.heroId);
-    this.player = spawnUnit(heroTpl, 'radiant', { x: LANE_CENTER - 420, y: 0 }, this.rng);
+    this.player = spawnUnit(heroTpl, 'radiant', { x: LANE_CENTER - 480, y: 0 }, this.rng);
     this.units.set(this.player.id, this.player);
 
     if (config.enemyHero) {
       const enemyTpl = heroById(config.enemyHeroId);
-      this.enemy = spawnUnit(enemyTpl, 'dire', { x: LANE_CENTER + 420, y: 0 }, this.rng);
+      this.enemy = spawnUnit(enemyTpl, 'dire', { x: LANE_CENTER + 480, y: 0 }, this.rng);
       this.units.set(this.enemy.id, this.enemy);
       this.enemyAi = new EnemyHeroAi(this.enemy, ENEMY_PROFILES[config.enemyDifficulty]);
     }
@@ -105,7 +105,7 @@ export class World {
     }
 
     // Seed the lane so the drill starts in combat instead of with a 10 second walk.
-    this.spawnWave(LANE_CENTER - 500, LANE_CENTER + 500);
+    this.spawnWave(LANE_CENTER - 150, LANE_CENTER + 150);
     this.waveTimer = WAVE_INTERVAL;
   }
 

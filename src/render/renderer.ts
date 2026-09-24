@@ -48,8 +48,8 @@ export class Renderer implements GameRenderer {
     this.camera.snap(target);
   }
 
-  follow(target: Vec2, dt: number) {
-    this.camera.follow(target, dt);
+  follow(target: Vec2, dt: number, lead = 0) {
+    this.camera.follow(target, dt, lead);
   }
 
   toWorld(screen: Vec2): Vec2 {

@@ -12,6 +12,8 @@ import { Results } from './ui/results.ts';
 
 const SIM_STEP = 1 / 120;
 const MAX_CATCHUP = 0.25;
+/** How far ahead of the player the camera sits, in sim units. */
+const CAMERA_LEAD = 240;
 
 type State = 'menu' | 'playing' | 'paused' | 'results';
 
@@ -154,7 +156,9 @@ function frame(now: number) {
       world.step(SIM_STEP);
       accumulator -= SIM_STEP;
     }
-    renderer.follow(world.player.pos, elapsed);
+    // Lead the camera toward the enemy side; that is where the creeps you are
+    // farming always are.
+    renderer.follow(world.player.pos, elapsed, CAMERA_LEAD);
     hud.update(world, input.isAttackCursor);
     if (world.finished) finish();
   }

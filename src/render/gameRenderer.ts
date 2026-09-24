@@ -16,9 +16,12 @@ export interface GameRenderer {
   /** One frame. `dt` is real seconds since the last draw — 0 while paused. */
   draw(world: World, dt: number): void;
 
-  /** Camera: snap on start, follow every frame. */
+  /**
+   * Camera: snap on start, follow every frame. `lead` pushes the view ahead of
+   * the target along the lane, so the wave sits in frame rather than at the edge.
+   */
   snap(target: Vec2): void;
-  follow(target: Vec2, dt: number): void;
+  follow(target: Vec2, dt: number, lead?: number): void;
 
   /** Screen pixels to sim units. */
   toWorld(screen: Vec2): Vec2;

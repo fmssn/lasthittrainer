@@ -22,7 +22,7 @@ export class Scene3D {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap; // PCFSoft was removed in three 0.186
 
     this.scene.background = new THREE.Color(0x141d22);
     this.scene.fog = new THREE.Fog(0x141d22, 2600, 5200);

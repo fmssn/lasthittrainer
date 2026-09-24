@@ -103,8 +103,9 @@ export class Renderer3D implements GameRenderer {
     this.stage.snap(target.x, target.y);
   }
 
-  follow(target: Vec2, dt: number) {
-    this.stage.follow(target.x, target.y, dt);
+  follow(target: Vec2, dt: number, lead = 0) {
+    // The lane runs along sim x, so the lead is a straight offset on that axis.
+    this.stage.follow(target.x + lead, target.y, dt);
   }
 
   toWorld(screen: Vec2): Vec2 {
