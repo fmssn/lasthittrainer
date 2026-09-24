@@ -113,7 +113,9 @@ function frame(now: number) {
       world.step(SIM_STEP);
       accumulator -= SIM_STEP;
     }
-    renderer.camera.follow(world.player.pos, elapsed);
+    // Lead the camera toward the enemy side; that is where the creeps you are
+    // farming always are.
+    renderer.camera.follow(world.player.pos, elapsed, 240);
     hud.update(world, input.isAttackCursor);
     if (world.finished) finish();
   }

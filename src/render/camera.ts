@@ -3,15 +3,18 @@ import { clamp, lerp } from '../sim/math.ts';
 
 export class Camera {
   pos: Vec2 = { x: 0, y: 0 };
-  scale = 0.85;
+  scale = 0.75;
 
   viewW = 0;
   viewH = 0;
 
-  follow(target: Vec2, dt: number) {
-    // Slight lag so the view does not jitter with every step.
+  /**
+   * Follow with a lead toward the lane you are farming, so the wave sits in
+   * frame instead of at the edge of the screen.
+   */
+  follow(target: Vec2, dt: number, lead = 0) {
     const t = 1 - Math.pow(0.001, dt);
-    this.pos.x = lerp(this.pos.x, target.x, t);
+    this.pos.x = lerp(this.pos.x, target.x + lead, t);
     this.pos.y = lerp(this.pos.y, target.y * 0.5, t);
   }
 

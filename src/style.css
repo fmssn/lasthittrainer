@@ -77,6 +77,11 @@ kbd {
 .hud {
   position: absolute;
   inset: 0;
+}
+
+/* The HUD covers the whole viewport, so it must never swallow game clicks. */
+#overlay > .hud,
+#overlay > .hud * {
   pointer-events: none;
 }
 
