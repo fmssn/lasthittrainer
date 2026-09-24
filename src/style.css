@@ -47,10 +47,6 @@ body {
   cursor: default;
 }
 
-#game.attack-cursor {
-  cursor: crosshair;
-}
-
 /* The three.js stage and its screen-space annotation layer, both under #game,
    which stays on top as the transparent pointer surface. */
 .stage3d,
