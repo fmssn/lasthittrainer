@@ -275,10 +275,17 @@ export class World {
   runAggroCheck(attacker: Unit, target: Unit) {
     if (!this.config.aggroEnabled) return;
 
+    // The two halves are not symmetric. Only an order on an enemy *hero* pulls:
+    // last-hitting a creep has to stay free, or the drill would punish the one
+    // thing it is teaching. Handing aggro back works off any unit of your own,
+    // creeps included — clicking your own creep is how it is actually done.
+    const pull = target.team !== attacker.team && target.kind === 'hero';
+    const giveBack = target.team === attacker.team;
+    if (!pull && !giveBack) return;
+
     // Only the pull is on cooldown. Giving aggro back has to stay available
     // inside the 2.3 s you are holding it, or the mechanic could never be used.
-    const hostile = target.team !== attacker.team;
-    if (hostile) {
+    if (pull) {
       if (attacker.aggroCooldown > 0) return;
       attacker.aggroCooldown = AGGRO_COOLDOWN;
     }
@@ -288,7 +295,7 @@ export class World {
       const radius = u.kind === 'tower' ? u.attackRange : aggroTriggerRange(u.kind);
       if (dist(u.pos, attacker.pos) > radius) continue;
 
-      if (hostile) {
+      if (pull) {
         u.aggroTargetId = attacker.id;
         u.aggroTimer = AGGRO_DURATION;
       } else if (u.aggroTargetId === attacker.id) {
