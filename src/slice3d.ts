@@ -47,6 +47,9 @@ const stage = new Scene3D(canvas);
 const world = new World({ ...DEFAULT_CONFIG, duration: 99999 });
 const views = new Map<number, Record3D>();
 
+// This page is a debug harness, so hand the console the live objects.
+Object.assign(globalThis, { world, views, stage });
+
 addEventListener('resize', () => stage.resize());
 addEventListener('wheel', (e) => stage.zoom(e.deltaY * 0.0012), { passive: true });
 
