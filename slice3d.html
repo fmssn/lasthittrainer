@@ -3,10 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Last Hit Trainer — 3D slice</title>
+    <title>Last Hit Trainer — 3D debug</title>
     <style>
       html, body { margin: 0; height: 100%; background: #0d1418; overflow: hidden; }
-      #scene { display: block; width: 100vw; height: 100vh; }
+      #app { position: relative; width: 100vw; height: 100vh; }
+      .stage3d, .stage3d-hud { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
       #info {
         position: fixed; left: 12px; top: 12px; z-index: 10;
         font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -16,8 +17,9 @@
     </style>
   </head>
   <body>
-    <canvas id="scene"></canvas>
-    <div id="info">loading…</div>
+    <div id="app">
+      <div id="info">loading…</div>
+    </div>
     <script type="module" src="/src/slice3d.ts"></script>
   </body>
 </html>

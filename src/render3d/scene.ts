@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 /**
- * Three.js stage for the 3D slice.
+ * Three.js stage shared by the in-game 3D renderer and the debug page.
  *
  * Coordinate mapping, decided once here so nothing downstream has to think:
  *   sim (x, y) on a flat plane  ->  three (x, 0, y), with +Y up.
@@ -22,7 +22,7 @@ export class Scene3D {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
 
     this.scene.background = new THREE.Color(0x141d22);
     this.scene.fog = new THREE.Fog(0x141d22, 2600, 5200);
@@ -90,12 +90,21 @@ export class Scene3D {
     this.controls.enabled = on;
   }
 
+  /** Jump the camera to a sim-space point, with no follow lag. */
+  snap(x: number, y: number) {
+    this.target.set(x, 0, y);
+    this.place();
+  }
+
   /** Keep the camera looking at a sim-space point. */
   follow(x: number, y: number, dt: number) {
     if (this.controls.enabled) return;
     const t = 1 - Math.pow(0.001, dt);
     this.target.lerp(new THREE.Vector3(x, 0, y), t);
+    this.place();
+  }
 
+  private place() {
     const offset = new THREE.Vector3(0, 1080, 1290);
     this.camera.position.copy(this.target).add(offset);
     this.camera.lookAt(this.target);

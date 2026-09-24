@@ -3,6 +3,10 @@ import { DEFAULT_CONFIG, type DrillConfig } from '../sim/config.ts';
 import { attackInterval } from '../sim/constants.ts';
 import { loadRuns, type RunRecord } from '../stats.ts';
 
+/** Which renderer draws the drill. Kept out of DrillConfig: the sim never sees it. */
+export type RenderMode = '2d' | '3d';
+const RENDER_KEY = 'lht.render.v1';
+
 const DURATIONS = [60, 120, 180, 300];
 const DIFFICULTY_NAMES = ['', 'Sloppy', 'Casual', 'Decent', 'Strong', 'Scripted'];
 
@@ -12,14 +16,19 @@ function pips(n: number): string {
 
 export class Menu {
   config: DrillConfig;
+  renderMode: RenderMode;
+  /** Set by main when the 3D assets fail to load, so the menu can say why. */
+  renderNote = '';
   private el: HTMLDivElement;
 
   constructor(
     root: HTMLElement,
     private onStart: (config: DrillConfig) => void,
+    private onRenderMode: (mode: RenderMode) => void = () => {},
   ) {
     const saved = localStorage.getItem('lht.config');
     this.config = { ...DEFAULT_CONFIG, ...(saved ? safeParse(saved) : {}) };
+    this.renderMode = localStorage.getItem(RENDER_KEY) === '3d' ? '3d' : '2d';
     this.el = document.createElement('div');
     this.el.className = 'screen menu';
     root.appendChild(this.el);
@@ -35,6 +44,13 @@ export class Menu {
     this.el.hidden = true;
   }
 
+  setRenderMode(mode: RenderMode) {
+    this.renderMode = mode;
+    localStorage.setItem(RENDER_KEY, mode);
+    this.render();
+    this.onRenderMode(mode);
+  }
+
   private set<K extends keyof DrillConfig>(key: K, value: DrillConfig[K]) {
     this.config[key] = value;
     localStorage.setItem('lht.config', JSON.stringify(this.config));
@@ -43,6 +59,8 @@ export class Menu {
 
   private render() {
     const c = this.config;
+    const c2d = this.renderMode === '2d' ? 'selected' : '';
+    const c3d = this.renderMode === '3d' ? 'selected' : '';
     const runs = loadRuns().slice(-6).reverse();
 
     this.el.innerHTML = `
@@ -141,6 +159,15 @@ export class Menu {
           <p class="aside">Turn these off once the timing is in your hands. That is the actual graduation.</p>
         </section>
 
+        <section class="block">
+          <h2>Renderer</h2>
+          <div class="chip-row">
+            <button class="chip ${c2d}" data-render="2d">2D</button>
+            <button class="chip ${c3d}" data-render="3d">3D (experimental)</button>
+          </div>
+          <p class="aside">${this.renderNote || 'Same sim, same timings — the 3D stage swaps the top-down art for animated rigs.'}</p>
+        </section>
+
         ${runs.length ? `<section class="block"><h2>Recent runs</h2><div class="runs">${runs.map(runRow).join('')}</div></section>` : ''}
 
         <button class="start" data-start>Start drill</button>
@@ -177,6 +204,9 @@ export class Menu {
         const key = n.dataset.toggleBtn as 'showKillableHighlight';
         this.set(key, !this.config[key]);
       }),
+    );
+    this.el.querySelectorAll<HTMLElement>('[data-render]').forEach((n) =>
+      n.addEventListener('click', () => this.setRenderMode(n.dataset.render as RenderMode)),
     );
     this.el.querySelector('[data-start]')?.addEventListener('click', () => {
       this.onStart({ ...this.config, seed: (Math.random() * 0xffff) | 0 });

@@ -51,6 +51,17 @@ body {
   cursor: crosshair;
 }
 
+/* The three.js stage and its screen-space annotation layer, both under #game,
+   which stays on top as the transparent pointer surface. */
+.stage3d,
+.stage3d-hud {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
 #overlay {
   position: absolute;
   inset: 0;
