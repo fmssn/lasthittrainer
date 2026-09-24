@@ -1,4 +1,4 @@
-import type { Renderer } from './render/renderer.ts';
+import type { GameRenderer } from './render/gameRenderer.ts';
 import type { World } from './sim/world.ts';
 
 /**
@@ -16,13 +16,18 @@ export class Input {
 
   constructor(
     private canvas: HTMLCanvasElement,
-    private renderer: Renderer,
+    private renderer: GameRenderer,
   ) {
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     canvas.addEventListener('mousedown', (e) => this.onMouseDown(e));
     canvas.addEventListener('mousemove', (e) => this.onMouseMove(e));
     canvas.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
     window.addEventListener('keydown', (e) => this.onKeyDown(e));
+  }
+
+  /** Swap the renderer under the same pointer surface when the mode changes. */
+  setRenderer(renderer: GameRenderer) {
+    this.renderer = renderer;
   }
 
   attach(world: World | null) {
@@ -37,7 +42,7 @@ export class Input {
 
   private point(e: MouseEvent) {
     const rect = this.canvas.getBoundingClientRect();
-    return this.renderer.camera.toWorld({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    return this.renderer.toWorld({ x: e.clientX - rect.left, y: e.clientY - rect.top });
   }
 
   private onMouseMove(e: MouseEvent) {
@@ -73,7 +78,7 @@ export class Input {
 
   private onWheel(e: WheelEvent) {
     e.preventDefault();
-    this.renderer.camera.zoom(e.deltaY > 0 ? -0.1 : 0.1);
+    this.renderer.zoom(e.deltaY > 0 ? -0.1 : 0.1);
   }
 
   private onKeyDown(e: KeyboardEvent) {

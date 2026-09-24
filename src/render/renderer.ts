@@ -2,6 +2,8 @@ import type { Unit, Vec2 } from '../sim/types.ts';
 import { DENY_THRESHOLD, LANE_HALF_WIDTH, attackPointTime } from '../sim/constants.ts';
 import { DIRE_SPAWN, RADIANT_SPAWN, World } from '../sim/world.ts';
 import { Camera } from './camera.ts';
+import type { GameRenderer } from './gameRenderer.ts';
+import { isPlayerTarget } from './targetAids.ts';
 import { clamp } from '../sim/math.ts';
 
 const COLORS = {
@@ -19,21 +21,49 @@ const COLORS = {
   muted: '#7d8d9c',
 };
 
-export class Renderer {
+export class Renderer implements GameRenderer {
   camera = new Camera();
   private ctx: CanvasRenderingContext2D;
   /** World-space cursor, updated by input. */
   cursor: Vec2 = { x: 0, y: 0 };
   hoverId: number | null = null;
 
+  private readonly onWindowResize = () => this.resize();
+  private readonly observer: ResizeObserver;
+
   constructor(private canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('2D canvas is not available in this browser');
     this.ctx = ctx;
     this.resize();
-    window.addEventListener('resize', () => this.resize());
+    window.addEventListener('resize', this.onWindowResize);
     // The window event alone misses layout changes that do not resize the window.
-    new ResizeObserver(() => this.resize()).observe(canvas);
+    this.observer = new ResizeObserver(() => this.resize());
+    this.observer.observe(canvas);
+  }
+
+  // ------------------------------------------------------------ GameRenderer
+
+  snap(target: Vec2) {
+    this.camera.snap(target);
+  }
+
+  follow(target: Vec2, dt: number, lead = 0) {
+    this.camera.follow(target, dt, lead);
+  }
+
+  toWorld(screen: Vec2): Vec2 {
+    return this.camera.toWorld(screen);
+  }
+
+  zoom(delta: number) {
+    this.camera.zoom(delta);
+  }
+
+  dispose() {
+    window.removeEventListener('resize', this.onWindowResize);
+    this.observer.disconnect();
+    this.ctx.clearRect(0, 0, this.camera.viewW, this.camera.viewH);
   }
 
   resize() {
@@ -47,7 +77,7 @@ export class Renderer {
     this.camera.viewH = h;
   }
 
-  draw(world: World) {
+  draw(world: World, _dt = 0) {
     const ctx = this.ctx;
     ctx.save();
     ctx.clearRect(0, 0, this.camera.viewW, this.camera.viewH);
@@ -160,7 +190,7 @@ export class Renderer {
       world.config.showKillableHighlight &&
       u.kind !== 'hero' &&
       world.player.alive &&
-      this.isPlayerTarget(world, u) &&
+      isPlayerTarget(world, u) &&
       world.shouldSwingNow(world.player, u)
     ) {
       const pulse = 0.55 + 0.45 * Math.sin(world.time * 12);
@@ -251,11 +281,6 @@ export class Renderer {
     ctx.stroke();
   }
 
-  private isPlayerTarget(world: World, u: Unit): boolean {
-    if (u.team === 'dire') return true;
-    return world.config.deniesEnabled && u.hp <= u.maxHp * DENY_THRESHOLD;
-  }
-
   // ------------------------------------------------------------ health bars
 
   private drawHealthBar(world: World, u: Unit) {
@@ -288,7 +313,7 @@ export class Renderer {
     }
 
     // What your next hit would leave it on.
-    if (world.config.showDamagePreview && u.kind !== 'hero' && world.player.alive && this.isPlayerTarget(world, u)) {
+    if (world.config.showDamagePreview && u.kind !== 'hero' && world.player.alive && isPlayerTarget(world, u)) {
       const dmg = world.expectedDamage(world.player, u);
       const after = clamp((world.hpAtLanding(world.player, u) - dmg) / u.maxHp, 0, 1);
       ctx.strokeStyle = COLORS.killable;

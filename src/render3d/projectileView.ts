@@ -87,9 +87,14 @@ export class ProjectileLayer {
     }
   }
 
-  dispose() {
+  /** Drop every bolt in flight — used when the drill restarts. */
+  clear() {
     for (const t of this.tracked.values()) t.mesh.removeFromParent();
     this.tracked.clear();
+  }
+
+  dispose() {
+    this.clear();
     this.geom.dispose();
     for (const m of this.materials.values()) m.dispose();
   }

@@ -1,0 +1,318 @@
+import * as THREE from 'three';
+import type { Unit, Vec2 } from '../sim/types.ts';
+import type { World } from '../sim/world.ts';
+import type { GameRenderer } from '../render/gameRenderer.ts';
+import { Scene3D } from './scene.ts';
+import { UnitView, type CreepAsset } from './unitView.ts';
+import { Annotations } from './annotations.ts';
+import { ProjectileLayer } from './projectileView.ts';
+import { isPlayerTarget } from '../render/targetAids.ts';
+
+/**
+ * The three.js renderer, wired up as a drop-in for the 2D one.
+ *
+ * Everything the 2D painter draws as flat vector art splits in two here:
+ * anything that lives on the ground plane (range rings, tower zones, the
+ * killable pulse) is a real mesh, and anything that has to stay screen-sized
+ * and legible (health bars, floaters, the windup arc) is drawn on a 2D overlay
+ * canvas in {@link Annotations}. The sim is untouched by both.
+ */
+
+/** Per-team base colour for the one creep rig, matching the 2D palette. */
+const TEAM_TINT: Record<string, number> = { radiant: 0x4e8f5f, dire: 0xa8564f };
+/** Kind nudges the base colour so ranged/siege still read apart at a glance. */
+const KIND_SHIFT: Record<string, number> = {
+  melee_creep: 1,
+  ranged_creep: 0.78,
+  siege_creep: 0.62,
+  hero: 1.35,
+};
+const SCALE: Record<string, number> = {
+  melee_creep: 1,
+  ranged_creep: 0.88,
+  siege_creep: 1.25,
+  hero: 1.45,
+};
+
+/** Ring line thickness in sim units — constant, so far rings stay visible. */
+const RING_WIDTH = 7;
+
+interface Rec {
+  view: UnitView;
+  /** Last seen sim state, kept so a unit removed mid-death still falls over. */
+  last: Unit;
+  /** Seconds since the unit vanished from the sim. */
+  ghost: number;
+}
+
+function tintFor(unit: Unit): number {
+  const base = new THREE.Color(TEAM_TINT[unit.team]);
+  const k = KIND_SHIFT[unit.kind] ?? 1;
+  return base.multiplyScalar(k).getHex();
+}
+
+export class Renderer3D implements GameRenderer {
+  cursor: Vec2 = { x: 0, y: 0 };
+  hoverId: number | null = null;
+
+  private readonly canvas: HTMLCanvasElement;
+  private readonly stage: Scene3D;
+  private readonly annotations: Annotations;
+
+  private readonly views = new Map<number, Rec>();
+  private readonly towers = new Map<number, THREE.Object3D>();
+  private readonly rings: THREE.Mesh[] = [];
+  private ringsUsed = 0;
+  private readonly bolts: ProjectileLayer;
+  private readonly cursorRing: THREE.Mesh;
+
+  private readonly raycaster = new THREE.Raycaster();
+  private readonly ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  private readonly hit = new THREE.Vector3();
+
+  /** The world drawn last frame, so a restarted drill clears stale rigs. */
+  private drawn: World | null = null;
+
+  private readonly onResize = () => this.resize();
+  private readonly observer: ResizeObserver;
+
+  constructor(
+    container: HTMLElement,
+    before: HTMLElement,
+    private readonly asset: CreepAsset,
+  ) {
+    this.canvas = document.createElement('canvas');
+    this.canvas.className = 'stage3d';
+    // Under the 2D canvas, which stays on top as the pointer surface.
+    container.insertBefore(this.canvas, before);
+
+    this.stage = new Scene3D(this.canvas);
+    this.annotations = new Annotations(container, before, this.stage.camera);
+    this.bolts = new ProjectileLayer(this.stage.scene);
+
+    this.cursorRing = this.makeRing(26, 0xffffff, 0.35);
+    this.stage.scene.add(this.cursorRing);
+
+    window.addEventListener('resize', this.onResize);
+    this.observer = new ResizeObserver(() => this.resize());
+    this.observer.observe(this.canvas);
+    this.resize();
+  }
+
+  // ------------------------------------------------------------ GameRenderer
+
+  snap(target: Vec2) {
+    this.stage.snap(target.x, target.y);
+  }
+
+  follow(target: Vec2, dt: number, lead = 0) {
+    // The lane runs along sim x, so the lead is a straight offset on that axis.
+    this.stage.follow(target.x + lead, target.y, dt);
+  }
+
+  toWorld(screen: Vec2): Vec2 {
+    const w = this.canvas.clientWidth || 1;
+    const h = this.canvas.clientHeight || 1;
+    this.raycaster.setFromCamera(
+      new THREE.Vector2((screen.x / w) * 2 - 1, -(screen.y / h) * 2 + 1),
+      this.stage.camera,
+    );
+    // The lane is the y=0 plane, so every click resolves to exactly one point.
+    const p = this.raycaster.ray.intersectPlane(this.ground, this.hit);
+    return p ? { x: p.x, y: p.z } : { ...this.cursor };
+  }
+
+  zoom(delta: number) {
+    // The 2D camera's positive delta means "closer"; the ortho frustum shrinks.
+    this.stage.zoom(-delta);
+  }
+
+  draw(world: World, dt: number) {
+    if (world !== this.drawn) {
+      this.clearScene();
+      this.drawn = world;
+    }
+
+    const seen = new Set<number>();
+    for (const unit of world.units.values()) {
+      seen.add(unit.id);
+      this.syncUnit(unit, dt);
+    }
+    this.reapGhosts(seen, dt);
+
+    this.ringsUsed = 0;
+    this.drawTowerZones(world);
+    if (world.config.showRangeRings && world.player.alive) {
+      this.ring(world.player.pos, world.player.attackRange, 0xffd479, 0.22);
+    }
+    this.drawKillable(world);
+    for (let i = this.ringsUsed; i < this.rings.length; i++) this.rings[i].visible = false;
+
+    this.cursorRing.position.set(this.cursor.x, 2, this.cursor.y);
+    this.bolts.sync(world);
+
+    this.stage.render();
+    this.annotations.draw(world, this.hoverId);
+  }
+
+  dispose() {
+    window.removeEventListener('resize', this.onResize);
+    this.observer.disconnect();
+    this.clearScene();
+    this.annotations.dispose();
+    this.stage.renderer.dispose();
+    this.canvas.remove();
+  }
+
+  // ------------------------------------------------------------------- units
+
+  private syncUnit(unit: Unit, dt: number) {
+    if (unit.kind === 'tower') {
+      let mesh = this.towers.get(unit.id);
+      if (!mesh) {
+        mesh = towerMesh(unit);
+        this.towers.set(unit.id, mesh);
+        this.stage.scene.add(mesh);
+      }
+      mesh.position.set(unit.pos.x, 0, unit.pos.y);
+      mesh.visible = unit.alive;
+      return;
+    }
+
+    let rec = this.views.get(unit.id);
+    if (!rec) {
+      const view = new UnitView(unit, this.asset, tintFor(unit));
+      view.root.scale.multiplyScalar(SCALE[unit.kind] ?? 1);
+      this.stage.scene.add(view.root);
+      rec = { view, last: unit, ghost: 0 };
+      this.views.set(unit.id, rec);
+    }
+    rec.last = unit;
+    rec.ghost = 0;
+    rec.view.sync(unit, dt);
+  }
+
+  /** Units the sim has forgotten: hold the corpse long enough to read the fall. */
+  private reapGhosts(seen: Set<number>, dt: number) {
+    for (const [id, rec] of this.views) {
+      if (seen.has(id)) continue;
+      rec.ghost += dt;
+      rec.view.sync({ ...rec.last, alive: false }, dt);
+      if (rec.ghost > 4) {
+        rec.view.dispose();
+        this.views.delete(id);
+      }
+    }
+    for (const [id, mesh] of this.towers) {
+      if (seen.has(id)) continue;
+      mesh.removeFromParent();
+      this.towers.delete(id);
+    }
+  }
+
+  // ------------------------------------------------------------ ground rings
+
+  private makeRing(radius: number, color: number, opacity: number): THREE.Mesh {
+    const mesh = new THREE.Mesh(
+      new THREE.RingGeometry(Math.max(1, radius - RING_WIDTH), radius, 72),
+      new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      }),
+    );
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.y = 2; // just clear of the lane decal
+    mesh.userData.radius = radius;
+    return mesh;
+  }
+
+  /** Borrow a ring from the pool. Geometry is only rebuilt when a radius changes. */
+  private ring(pos: Vec2, radius: number, color: number, opacity: number) {
+    let mesh = this.rings[this.ringsUsed];
+    if (!mesh) {
+      mesh = this.makeRing(radius, color, opacity);
+      this.rings.push(mesh);
+      this.stage.scene.add(mesh);
+    }
+    if (mesh.userData.radius !== radius) {
+      mesh.geometry.dispose();
+      mesh.geometry = new THREE.RingGeometry(Math.max(1, radius - RING_WIDTH), radius, 72);
+      mesh.userData.radius = radius;
+    }
+    const mat = mesh.material as THREE.MeshBasicMaterial;
+    mat.color.setHex(color);
+    mat.opacity = opacity;
+    mesh.position.set(pos.x, 2, pos.y);
+    mesh.visible = true;
+    this.ringsUsed++;
+  }
+
+  private drawTowerZones(world: World) {
+    for (const u of world.units.values()) {
+      if (u.kind !== 'tower' || !u.alive) continue;
+      this.ring(u.pos, u.attackRange, u.team === 'radiant' ? 0x5fbf7a : 0xd8615a, 0.16);
+    }
+  }
+
+  private drawKillable(world: World) {
+    if (!world.config.showKillableHighlight || !world.player.alive) return;
+    const pulse = 0.55 + 0.45 * Math.sin(world.time * 12);
+    for (const u of world.aliveUnits()) {
+      if (u.kind === 'hero' || u.kind === 'tower') continue;
+      if (!isPlayerTarget(world, u)) continue;
+      if (!world.shouldSwingNow(world.player, u)) continue;
+      this.ring(u.pos, u.radius + 18, u.team === 'radiant' ? 0x7fd6a2 : 0xffd479, pulse);
+    }
+  }
+
+  // ------------------------------------------------------------------- misc
+
+  private clearScene() {
+    for (const rec of this.views.values()) rec.view.dispose();
+    this.views.clear();
+    for (const mesh of this.towers.values()) mesh.removeFromParent();
+    this.towers.clear();
+    for (const r of this.rings) r.visible = false;
+    this.bolts.clear();
+  }
+
+  /** Debug only: how many rigs are playing each clip. Drives the slice readout. */
+  clipHistogram(): Record<string, number> {
+    const hist: Record<string, number> = {};
+    for (const rec of this.views.values()) hist[rec.view.clip] = (hist[rec.view.clip] ?? 0) + 1;
+    return hist;
+  }
+
+  /** Debug only: free-look camera, for inspecting the rigs from any angle. */
+  toggleOrbit(on: boolean) {
+    this.stage.toggleOrbit(on);
+  }
+
+  get rigCount(): number {
+    return this.views.size;
+  }
+
+  private resize() {
+    this.stage.resize();
+    this.annotations.resize();
+  }
+}
+
+function towerMesh(unit: Unit): THREE.Object3D {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(unit.radius * 0.9, unit.radius * 1.3, 260, 8),
+    new THREE.MeshStandardMaterial({
+      color: unit.team === 'radiant' ? 0x4a5d3a : 0x5d3a3a,
+      roughness: 0.9,
+    }),
+  );
+  body.position.y = 130;
+  body.castShadow = true;
+  body.receiveShadow = true;
+  g.add(body);
+  return g;
+}
