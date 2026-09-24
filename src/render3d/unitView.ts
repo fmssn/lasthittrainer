@@ -26,6 +26,17 @@ const MODEL_SCALE = 54;
 /** Below this sim-speed a unit is considered standing still. */
 const WALK_EPSILON = 12;
 
+/**
+ * Seconds of travel averaged into one speed reading.
+ *
+ * The sim only moves on its fixed 1/120 s step, so at render rates at or above
+ * that a frame regularly lands between two steps and sees zero displacement.
+ * Measured per frame, that zero drops the rig straight back to Idle mid-stride
+ * and the walk cycle never survives its own crossfade. A short window rides
+ * over the gaps without noticeably lagging a stop.
+ */
+const SPEED_WINDOW = 0.1;
+
 export type ClipName = 'Idle' | 'Walk' | 'Attack' | 'Death';
 
 export interface CreepAsset {
@@ -55,6 +66,10 @@ export class UnitView {
   private attackHold = 0;
   private prev = new THREE.Vector3();
   private speed = 0;
+  /** False until the first sync seeds `prev`, so spawning is not a teleport. */
+  private primed = false;
+  private travelled = 0;
+  private window = 0;
   private dead = false;
 
   constructor(asset: CreepAsset, tint?: number) {
@@ -104,7 +119,17 @@ export class UnitView {
   /** Drive the view from one frame of sim state. */
   sync(unit: Unit, dt: number) {
     const pos = new THREE.Vector3(unit.pos.x, 0, unit.pos.y);
-    if (dt > 0) this.speed = pos.distanceTo(this.prev) / dt;
+    if (!this.primed) {
+      this.prev.copy(pos);
+      this.primed = true;
+    }
+    this.travelled += pos.distanceTo(this.prev);
+    this.window += dt;
+    if (this.window >= SPEED_WINDOW) {
+      this.speed = this.travelled / this.window;
+      this.travelled = 0;
+      this.window = 0;
+    }
     this.prev.copy(pos);
 
     this.root.position.copy(pos);

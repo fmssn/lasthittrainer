@@ -79,4 +79,9 @@ function start(renderer: Renderer3D) {
   }
 
   requestAnimationFrame(frame);
+
+  if (import.meta.env.DEV) {
+    // Handle for poking at the rigs from the console.
+    (window as unknown as Record<string, unknown>).__lht3d = { world, renderer };
+  }
 }
