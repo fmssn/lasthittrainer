@@ -56,6 +56,11 @@ export class Renderer implements GameRenderer {
     return this.camera.toWorld(screen);
   }
 
+  /** Flat view: what the cursor is over is what it resolves to on the lane. */
+  pickUnit(screen: Vec2, world: World, forUnit: Unit): Unit | null {
+    return world.unitAt(this.camera.toWorld(screen), forUnit);
+  }
+
   zoom(delta: number) {
     this.camera.zoom(delta);
   }

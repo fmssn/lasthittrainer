@@ -40,16 +40,30 @@ export class Input {
     return this.attackCursor;
   }
 
-  private point(e: MouseEvent) {
+  private screen(e: MouseEvent) {
     const rect = this.canvas.getBoundingClientRect();
-    return this.renderer.toWorld({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+
+  /** Where the order lands: the lane point under the cursor. */
+  private point(e: MouseEvent) {
+    return this.renderer.toWorld(this.screen(e));
+  }
+
+  /**
+   * What the order is aimed at. The renderer answers this rather than the sim,
+   * because on the 3D stage a unit is clickable well above the lane point its
+   * cursor resolves to.
+   */
+  private pick(e: MouseEvent, world: World) {
+    return this.renderer.pickUnit(this.screen(e), world, world.player);
   }
 
   private onMouseMove(e: MouseEvent) {
     const p = this.point(e);
     this.renderer.cursor = p;
     const world = this.world;
-    this.renderer.hoverId = world ? (world.unitAt(p, world.player)?.id ?? null) : null;
+    this.renderer.hoverId = world ? (this.pick(e, world)?.id ?? null) : null;
   }
 
   private onMouseDown(e: MouseEvent) {
@@ -59,7 +73,7 @@ export class Input {
 
     if (e.button === 2) {
       e.preventDefault();
-      const target = world.unitAt(p, world.player);
+      const target = this.pick(e, world);
       // Right click never attacks your own units — denying takes an A-click,
       // same as the real game.
       if (target && target.team !== world.player.team) world.orderAttack(world.player, target);
@@ -69,7 +83,7 @@ export class Input {
     }
 
     if (e.button === 0 && this.attackCursor) {
-      const target = world.unitAt(p, world.player);
+      const target = this.pick(e, world);
       if (target && world.canTarget(world.player, target)) world.orderAttack(world.player, target);
       else world.orderAttackMove(world.player, p);
       this.setAttackCursor(false);

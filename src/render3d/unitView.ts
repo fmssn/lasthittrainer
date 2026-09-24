@@ -48,8 +48,20 @@ export interface CreepAsset {
   clips: THREE.AnimationClip[];
 }
 
+/** Base64 payload of a `data:` URL, as bytes. */
+function decodeDataUrl(url: string): ArrayBuffer {
+  const bytes = Uint8Array.from(atob(url.slice(url.indexOf(',') + 1)), (c) => c.charCodeAt(0));
+  return bytes.buffer;
+}
+
 export async function loadCreep(url: string): Promise<CreepAsset> {
-  const gltf = await new GLTFLoader().loadAsync(url);
+  const loader = new GLTFLoader();
+  // A data: URL is decoded here and handed to parse() rather than loadAsync(),
+  // which would fetch() it — and fetch() on a data: URL is a connect-src request,
+  // so a host with a strict CSP blocks it. Lets a build inline the GLB.
+  const gltf = url.startsWith('data:')
+    ? await loader.parseAsync(decodeDataUrl(url), '')
+    : await loader.loadAsync(url);
   const missing = (['Idle', 'Walk', 'Attack', 'Death'] as ClipName[])
     .filter((n) => !gltf.animations.some((c) => c.name === n));
   if (missing.length) {
