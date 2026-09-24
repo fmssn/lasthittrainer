@@ -3,7 +3,9 @@ import { World } from './sim/world.ts';
 import { DEFAULT_CONFIG } from './sim/config.ts';
 import type { Unit } from './sim/types.ts';
 import { Scene3D } from './render3d/scene.ts';
-import { loadCreep, UnitView, type CreepAsset } from './render3d/unitView.ts';
+import { loadCreep, MODEL_HEIGHT, UnitView, type CreepAsset } from './render3d/unitView.ts';
+import { ProjectileLayer } from './render3d/projectileView.ts';
+import { Overlay } from './render3d/overlay.ts';
 
 /**
  * 3D vertical slice.
@@ -41,16 +43,22 @@ interface Record3D {
 }
 
 const canvas = document.getElementById('scene') as HTMLCanvasElement;
+const overlayCanvas = document.getElementById('overlay') as HTMLCanvasElement;
 const info = document.getElementById('info') as HTMLDivElement;
 
 const stage = new Scene3D(canvas);
+const overlay = new Overlay(overlayCanvas);
+const bolts = new ProjectileLayer(stage.scene);
 const world = new World({ ...DEFAULT_CONFIG, duration: 99999 });
 const views = new Map<number, Record3D>();
 
 // This page is a debug harness, so hand the console the live objects.
-Object.assign(globalThis, { world, views, stage });
+Object.assign(globalThis, { world, views, stage, overlay });
 
-addEventListener('resize', () => stage.resize());
+addEventListener('resize', () => {
+  stage.resize();
+  overlay.resize();
+});
 addEventListener('wheel', (e) => stage.zoom(e.deltaY * 0.0012), { passive: true });
 
 let orbit = false;
@@ -95,7 +103,7 @@ function start(asset: CreepAsset) {
 
     let rec = views.get(unit.id);
     if (!rec) {
-      const view = new UnitView(asset, TINT[unit.kind] ?? 0x777777);
+      const view = new UnitView(unit, asset, TINT[unit.kind] ?? 0x777777);
       view.root.scale.multiplyScalar(SCALE[unit.kind] ?? 1);
       stage.scene.add(view.root);
       rec = { view, last: unit, ghost: 0 };
@@ -145,8 +153,13 @@ function start(asset: CreepAsset) {
       }
     }
 
+    bolts.sync(world);
+
     stage.follow(world.player.pos.x, world.player.pos.y, dt);
     stage.render();
+    // After stage.render(), so the camera matrices the overlay projects with are
+    // the ones this frame was actually drawn from.
+    overlay.render(world, stage.camera, (u) => MODEL_HEIGHT * (SCALE[u.kind] ?? 1));
 
     frames++;
     fpsAccum += dt;

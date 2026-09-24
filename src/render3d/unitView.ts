@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { Unit } from '../sim/types.ts';
+import { attackPointTime } from '../sim/constants.ts';
+import { attachWeapon } from './weapons.ts';
 
 /**
  * One animated unit on the 3D stage.
@@ -22,6 +24,8 @@ const ATTACK_HIT_TIME = (10 - 1) / CLIP_FPS;
 
 /** Model is authored 1.85 units tall; sim creeps read right at ~100 units. */
 const MODEL_SCALE = 54;
+/** Head height of an unscaled rig, in sim units. Health bars anchor to it. */
+export const MODEL_HEIGHT = 1.85 * MODEL_SCALE;
 
 /** Below this sim-speed a unit is considered standing still. */
 const WALK_EPSILON = 12;
@@ -51,13 +55,13 @@ export class UnitView {
   private actions = new Map<ClipName, THREE.AnimationAction>();
   private current: ClipName = 'Idle';
 
-  /** Seconds left in the attack clip before we may return to idle/walk. */
-  private attackHold = 0;
+  /** Phase seen last frame, so a new swing is detected as a transition. */
+  private prevPhase: Unit['phase'] = 'idle';
   private prev = new THREE.Vector3();
   private speed = 0;
   private dead = false;
 
-  constructor(asset: CreepAsset, tint?: number) {
+  constructor(unit: Unit, asset: CreepAsset, tint?: number) {
     this.root = cloneSkinned(asset.scene) as THREE.Group;
     this.root.scale.setScalar(MODEL_SCALE);
 
@@ -71,6 +75,15 @@ export class UnitView {
         (o.material as THREE.MeshStandardMaterial).color.setHex(tint);
       }
     });
+
+    // Weapon follows from sim state like everything else here: a unit that
+    // spawns projectiles shoots, one that hits instantly swings. That covers
+    // creeps and heroes with the same rule — Juggernaut and a melee creep both
+    // get a sword, Sniper and a ranged creep both get a bow.
+    // Attached after the tint pass so steel and wood keep their own colours.
+    if (!attachWeapon(this.root, unit.projectileSpeed > 0 ? 'bow' : 'sword')) {
+      throw new Error('creep rig has no hand bone to attach a weapon to');
+    }
 
     this.mixer = new THREE.AnimationMixer(this.root);
     for (const clip of asset.clips) {
@@ -122,28 +135,39 @@ export class UnitView {
       return;
     }
 
-    this.attackHold = Math.max(0, this.attackHold - dt);
+    // The Attack clip is owned by the sim's attack phases, not by its own
+    // duration. Dota lets you cancel both windup and backswing with a new
+    // order, and world.ts models that by dropping the unit straight back to
+    // phase 'idle' — so the rig blends out the instant the phase clears. A clip
+    // that ran to completion regardless would show a swing the sim never made.
+    const swinging = unit.phase === 'windup' || unit.phase === 'backswing';
 
-    if (unit.phase === 'windup' && this.attackHold <= 0) {
+    // Keyed on the phase transition, so a unit that goes
+    // straight from backswing into the next windup restarts the clip instead of
+    // finishing the previous swing's follow-through.
+    if (unit.phase === 'windup' && this.prevPhase !== 'windup') {
       // Rescale so the club connects on the sim's damage tick rather than
-      // whenever the artist happened to put the contact frame.
-      const scale = ATTACK_HIT_TIME / Math.max(unit.attackPoint, 0.01);
-      const clipLength = this.actions.get('Attack')!.getClip().duration;
+      // whenever the artist happened to put the contact frame. attackPointTime
+      // is the same helper the sim uses, so attack speed is accounted for.
+      const point = attackPointTime(unit.attackPoint, unit.attackSpeedBonus);
+      const scale = ATTACK_HIT_TIME / Math.max(point, 0.01);
       this.play('Attack', 0.06, scale);
-      this.attackHold = clipLength / scale;
-    } else if (this.attackHold <= 0) {
+    } else if (!swinging) {
+      // Cancelled or finished: 0.12s out is quick enough to read as an
+      // interrupted swing without snapping.
       if (this.speed > WALK_EPSILON) {
         // Deliberately not foot-locked: sim creeps move 325 units/s, which is
         // several body-heights per second. Matching stride exactly would look
         // like a sprint. Cadence is scaled, then clamped, and slide is accepted.
         const cadence = THREE.MathUtils.clamp(this.speed / 240, 0.7, 2.0);
-        this.play('Walk', 0.18, cadence);
+        this.play('Walk', 0.12, cadence);
         this.actions.get('Walk')!.timeScale = cadence;
       } else {
-        this.play('Idle', 0.25);
+        this.play('Idle', 0.12);
       }
     }
 
+    this.prevPhase = unit.phase;
     this.mixer.update(dt);
   }
 
