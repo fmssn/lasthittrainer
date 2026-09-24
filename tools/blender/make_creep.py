@@ -44,8 +44,9 @@ PARTS = [
     ("head",  (0.00, -0.02, 1.66), (0.38, 0.38, 0.38)),
     ("arm.L", (-0.36, 0.00, 1.12), (0.16, 0.16, 0.58)),
     ("arm.R", (0.36, 0.00, 1.12), (0.16, 0.16, 0.58)),
-    # Club, welded to the right arm so it inherits the swing.
-    ("arm.R", (0.36, -0.10, 0.80), (0.12, 0.44, 0.12)),
+    # No weapon is welded on here any more. The runtime attaches a sword or a
+    # bow to the hand bones depending on the unit's projectile speed, so one rig
+    # can serve melee and ranged units without a second export.
     ("leg.L", (-0.15, 0.00, 0.40), (0.22, 0.22, 0.80)),
     ("leg.R", (0.15, 0.00, 0.40), (0.22, 0.22, 0.80)),
 ]

@@ -208,7 +208,11 @@ export class Annotations {
     const ctx = this.ctx;
     ctx.textAlign = 'center';
     for (const f of world.floaters) {
-      const s = this.project(f.pos, 150);
+      // The sim drifts floaters along -y, which reads as "up" on the 2D canvas
+      // but as "sideways across the lane" here. Undo that drift and spend it on
+      // world height instead, so the text climbs off the unit's head in 3D.
+      const drift = f.rise * f.age;
+      const s = this.project({ x: f.pos.x, y: f.pos.y + drift }, 150 + drift);
       ctx.globalAlpha = clamp(1 - f.age / f.life, 0, 1);
       ctx.fillStyle = f.color;
       ctx.font =

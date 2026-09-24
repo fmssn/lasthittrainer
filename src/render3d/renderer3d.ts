@@ -5,6 +5,7 @@ import type { GameRenderer } from '../render/gameRenderer.ts';
 import { Scene3D } from './scene.ts';
 import { UnitView, type CreepAsset } from './unitView.ts';
 import { Annotations } from './annotations.ts';
+import { ProjectileLayer } from './projectileView.ts';
 import { isPlayerTarget } from '../render/targetAids.ts';
 
 /**
@@ -62,7 +63,7 @@ export class Renderer3D implements GameRenderer {
   private readonly towers = new Map<number, THREE.Object3D>();
   private readonly rings: THREE.Mesh[] = [];
   private ringsUsed = 0;
-  private readonly bolts: THREE.Mesh[] = [];
+  private readonly bolts: ProjectileLayer;
   private readonly cursorRing: THREE.Mesh;
 
   private readonly raycaster = new THREE.Raycaster();
@@ -87,6 +88,7 @@ export class Renderer3D implements GameRenderer {
 
     this.stage = new Scene3D(this.canvas);
     this.annotations = new Annotations(container, before, this.stage.camera);
+    this.bolts = new ProjectileLayer(this.stage.scene);
 
     this.cursorRing = this.makeRing(26, 0xffffff, 0.35);
     this.stage.scene.add(this.cursorRing);
@@ -147,7 +149,7 @@ export class Renderer3D implements GameRenderer {
     for (let i = this.ringsUsed; i < this.rings.length; i++) this.rings[i].visible = false;
 
     this.cursorRing.position.set(this.cursor.x, 2, this.cursor.y);
-    this.drawProjectiles(world);
+    this.bolts.sync(world);
 
     this.stage.render();
     this.annotations.draw(world, this.hoverId);
@@ -179,7 +181,7 @@ export class Renderer3D implements GameRenderer {
 
     let rec = this.views.get(unit.id);
     if (!rec) {
-      const view = new UnitView(this.asset, tintFor(unit));
+      const view = new UnitView(unit, this.asset, tintFor(unit));
       view.root.scale.multiplyScalar(SCALE[unit.kind] ?? 1);
       this.stage.scene.add(view.root);
       rec = { view, last: unit, ghost: 0 };
@@ -266,27 +268,6 @@ export class Renderer3D implements GameRenderer {
     }
   }
 
-  private drawProjectiles(world: World) {
-    world.projectiles.forEach((p, i) => {
-      let mesh = this.bolts[i];
-      if (!mesh) {
-        mesh = new THREE.Mesh(
-          new THREE.SphereGeometry(10, 10, 8),
-          new THREE.MeshBasicMaterial({ color: 0xffffff }),
-        );
-        this.bolts.push(mesh);
-        this.stage.scene.add(mesh);
-      }
-      (mesh.material as THREE.MeshBasicMaterial).color.setHex(
-        p.kind === 'hero' ? 0xffd479 : p.team === 'radiant' ? 0x9fe0b3 : 0xf0a19c,
-      );
-      // Chest height: the projectile should read as leaving and hitting a body.
-      mesh.position.set(p.pos.x, 95, p.pos.y);
-      mesh.visible = true;
-    });
-    for (let i = world.projectiles.length; i < this.bolts.length; i++) this.bolts[i].visible = false;
-  }
-
   // ------------------------------------------------------------------- misc
 
   private clearScene() {
@@ -295,7 +276,7 @@ export class Renderer3D implements GameRenderer {
     for (const mesh of this.towers.values()) mesh.removeFromParent();
     this.towers.clear();
     for (const r of this.rings) r.visible = false;
-    for (const b of this.bolts) b.visible = false;
+    this.bolts.clear();
   }
 
   /** Debug only: how many rigs are playing each clip. Drives the slice readout. */
