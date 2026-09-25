@@ -28,6 +28,14 @@ export const DIRE_SPAWN = 5600;
 export const LANE_CENTER = (RADIANT_SPAWN + DIRE_SPAWN) / 2;
 export const HERO_RESPAWN_TIME = 6;
 export const RADIANT_TOWER_X = 1700;
+
+/**
+ * Phase timers are counted down by repeated subtraction of the fixed step, and
+ * 30 subtractions of 1/120 land a few times 10^-17 above zero rather than on
+ * it. Without a tolerance that residue costs an extra frame on every single
+ * swing, which is exactly the kind of error this app is supposed to not have.
+ */
+const TIMER_EPSILON = 1e-9;
 export const DIRE_TOWER_X = 4300;
 
 export interface Stats {
@@ -267,6 +275,33 @@ export class World {
   }
 
   /**
+   * Attack-move acquisition: the first valid enemy inside acquisition range is
+   * picked up while the unit travels, and when it dies the unit goes back to
+   * walking — `moveTarget` is deliberately left intact so the order outlives
+   * the kill, and on arrival the unit holds the spot and keeps swinging.
+   *
+   * Acquisition is not an order, so no aggro check runs here: attack-moving
+   * past a wave must not pull it, only a deliberate click on a hero does.
+   * Allies are never acquired either, which is what stops attack-move from
+   * denying your own creeps for you.
+   */
+  private acquireForAttackMove(u: Unit) {
+    let best: Unit | null = null;
+    let bestD = acquisitionRange(u.kind);
+    for (const o of this.units.values()) {
+      if (!o.alive || o.team === u.team) continue;
+      // The tower is invulnerable here, so walking into one is never the order.
+      if (o.kind === 'tower') continue;
+      const d = dist(u.pos, o.pos);
+      if (d < bestD) {
+        bestD = d;
+        best = o;
+      }
+    }
+    if (best) u.attackTargetId = best.id;
+  }
+
+  /**
    * The creep aggro check, run once per attack order a hero issues.
    *
    * Lane creeps rank the heroes near them by threat: one attacking the creep or
@@ -350,6 +385,7 @@ export class World {
       if (u.aggroCooldown > 0) u.aggroCooldown -= dt;
       if (u.hp < u.maxHp) u.hp = Math.min(u.maxHp, u.hp + u.hpRegen * dt);
       if (u.kind !== 'hero') runCreepAi(this, u);
+      else if (u.attackMove && !this.get(u.attackTargetId)) this.acquireForAttackMove(u);
     }
 
     if (this.enemyAi && this.enemy?.alive) this.enemyAi.update(this, dt);
@@ -443,6 +479,19 @@ export class World {
   // ----------------------------------------------------------------- combat
 
   private updateCombat(u: Unit, dt: number) {
+    // The backswing is resolved first, and a swing that is ready to start may
+    // then cut it short in the same tick: the follow-through never gates the
+    // next attack, only the attack cooldown does.
+    if (u.phase === 'backswing') {
+      u.phaseTimer -= dt;
+      if (u.phaseTimer <= TIMER_EPSILON) {
+        u.phase = 'idle';
+        u.phaseTimer = 0;
+      }
+    }
+
+    if (u.phase !== 'windup') this.tryStartSwing(u, dt);
+
     if (u.phase === 'windup') {
       u.phaseTimer -= dt;
       const target = this.get(u.attackTargetId);
@@ -453,25 +502,32 @@ export class World {
         if (u.kind === 'hero') this.stats.wastedSwings += u.team === 'radiant' ? 1 : 0;
         return;
       }
-      u.facing = angleTo(u.pos, target.pos);
-      if (u.phaseTimer <= 0) {
+      // Rooted, but still tracking: a unit keeps turning onto its target
+      // through the wind-up, at its own turn rate rather than snapping.
+      this.turnToward(u, angleTo(u.pos, target.pos), dt);
+      if (u.phaseTimer <= TIMER_EPSILON) {
         this.releaseAttack(u, target);
         u.phase = 'backswing';
         u.phaseTimer = attackBackswingTime(u.attackBackswing, u.attackSpeedBonus);
       }
-      return;
     }
+  }
 
-    if (u.phase === 'backswing') {
-      u.phaseTimer -= dt;
-      if (u.phaseTimer <= 0) u.phase = 'idle';
-    }
-
+  /**
+   * Begin a swing if everything lines up. Deliberately called before the
+   * wind-up is ticked, so the tick that decides to attack is also the first
+   * tick of the attack point — otherwise every swing in the game would land a
+   * frame late, and at 1/120 that is a whole frame of borrowed time on a
+   * timing the drill exists to teach.
+   */
+  private tryStartSwing(u: Unit, dt: number) {
     const target = this.get(u.attackTargetId);
     if (!target) return;
-    if (u.attackCooldown > 0) return;
+    if (u.attackCooldown > TIMER_EPSILON) return;
     if (!this.inAttackRange(u, target)) return;
 
+    // Turning happens on the clock, not for free: a unit that has to come
+    // about spends real time doing it before the wind-up can start.
     if (!this.facingTarget(u, target)) {
       this.turnToward(u, angleTo(u.pos, target.pos), dt);
       return;

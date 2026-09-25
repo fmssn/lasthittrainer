@@ -129,6 +129,96 @@ const results = await page.evaluate(async () => {
     check('ranged creep full vs hero', rangedToHero / rangedRaw, 1, 0.0001);
   }
 
+  // --- Swing timing on an isolated pair -----------------------------------
+  // Strip the lane down to one hero and one inert dummy so nothing else can
+  // touch the creep's health, then measure when damage actually lands.
+  const rig = (heroId) => {
+    const w = new World({ ...DEFAULT_CONFIG, heroId, seed: 5, enemyHero: false, duration: 1e9 });
+    const hero = w.player;
+    const creep = [...w.units.values()].find((u) => u.team === 'dire' && u.kind === 'melee_creep');
+    w.units.clear();
+    w.units.set(hero.id, hero);
+    w.units.set(creep.id, creep);
+    // Inert: it cannot move, swing back, or heal out from under the measurement.
+    creep.moveSpeed = 0;
+    creep.damageMin = 0;
+    creep.damageMax = 0;
+    creep.hpRegen = 0;
+    creep.pos = { x: hero.pos.x + 100, y: hero.pos.y };
+    hero.facing = 0;
+    return { w, hero, creep };
+  };
+  const STEP = 1 / 120;
+  /** Seconds until the creep's health next moves, or Infinity. */
+  const timeToDamage = (w, creep, limit = 5) => {
+    const before = creep.hp;
+    for (let t = 0; t < limit; t += STEP) {
+      w.step(STEP);
+      if (creep.hp !== before) return t + STEP;
+    }
+    return Infinity;
+  };
+
+  {
+    // Melee: damage lands exactly on the end of the wind-up, no travel.
+    const { w, hero, creep } = rig('juggernaut');
+    w.orderAttack(hero, creep);
+    const first = timeToDamage(w, creep);
+    // Tight on purpose: at a 1/120 step a 0.25s attack point is exactly 30
+    // frames, so anything but an exact landing means a frame is being lost.
+    check('melee hit lands on attack point', first, constants.attackPointTime(hero.attackPoint, hero.attackSpeedBonus), 0.002);
+    // And the next one lands one attack interval later, not one interval plus
+    // a backswing — the follow-through never gates the next swing.
+    const second = timeToDamage(w, creep);
+    check('melee cadence is the attack interval', second, constants.attackInterval(hero.baseAttackTime, hero.attackSpeedBonus), 0.012);
+  }
+
+  {
+    // Ranged: wind-up plus honest projectile travel over 100 units.
+    const { w, hero, creep } = rig('shadow_fiend');
+    w.orderAttack(hero, creep);
+    const windup = constants.attackPointTime(hero.attackPoint, hero.attackSpeedBonus);
+    check('ranged hit lands after travel', timeToDamage(w, creep), windup + 100 / hero.projectileSpeed, 0.02);
+  }
+
+  {
+    // Cancelling the wind-up throws the attack away entirely.
+    const { w, hero, creep } = rig('juggernaut');
+    w.orderAttack(hero, creep);
+    for (let t = 0; t < 0.1; t += STEP) w.step(STEP);
+    w.orderMove(hero, { x: hero.pos.x - 400, y: 0 });
+    const hp = creep.hp;
+    for (let t = 0; t < 1.5; t += STEP) w.step(STEP);
+    check('cancelled wind-up deals nothing', creep.hp, hp);
+  }
+
+  {
+    // Attack-move: the flag has to actually drive acquisition. Park the creep
+    // outside melee range but inside acquisition range and walk at it.
+    const { w, hero, creep } = rig('juggernaut');
+    creep.pos = { x: hero.pos.x + 400, y: hero.pos.y };
+    w.orderAttackMove(hero, { x: hero.pos.x + 900, y: 0 });
+    let acquired = false;
+    for (let t = 0; t < 3; t += STEP) {
+      w.step(STEP);
+      if (hero.attackTargetId === creep.id) acquired = true;
+      if (creep.hp < creep.maxHp) break;
+    }
+    check('attack-move acquires', acquired, true);
+    check('attack-move damages', creep.hp < creep.maxHp, true);
+  }
+
+  {
+    // ...but it must never pick up an ally, or it would deny for you.
+    const { w, hero, creep } = rig('juggernaut');
+    creep.team = 'radiant';
+    creep.hp = creep.maxHp * 0.2; // well under the deny line
+    creep.pos = { x: hero.pos.x + 300, y: hero.pos.y };
+    w.orderAttackMove(hero, { x: hero.pos.x + 900, y: 0 });
+    for (let t = 0; t < 2; t += STEP) w.step(STEP);
+    check('attack-move ignores allies', hero.attackTargetId, null);
+  }
+
   // --- Determinism: same seed, same lane ----------------------------------
   {
     const run = () => {
