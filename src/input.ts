@@ -1,4 +1,4 @@
-import type { GameRenderer } from './render/gameRenderer.ts';
+import type { Renderer3D } from './render3d/renderer3d.ts';
 import type { Vec2 } from './sim/types.ts';
 import type { World } from './sim/world.ts';
 
@@ -20,18 +20,13 @@ export class Input {
 
   constructor(
     private canvas: HTMLCanvasElement,
-    private renderer: GameRenderer,
+    private renderer: Renderer3D,
   ) {
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     canvas.addEventListener('mousedown', (e) => this.onMouseDown(e));
     canvas.addEventListener('mousemove', (e) => this.onMouseMove(e));
     canvas.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
     window.addEventListener('keydown', (e) => this.onKeyDown(e));
-  }
-
-  /** Swap the renderer under the same pointer surface when the mode changes. */
-  setRenderer(renderer: GameRenderer) {
-    this.renderer = renderer;
   }
 
   attach(world: World | null) {

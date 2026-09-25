@@ -3,7 +3,7 @@ import type { Unit, Vec2 } from '../sim/types.ts';
 import type { World } from '../sim/world.ts';
 import { DENY_THRESHOLD, attackPointTime } from '../sim/constants.ts';
 import { clamp } from '../sim/math.ts';
-import { isPlayerTarget } from '../render/targetAids.ts';
+import { isPlayerTarget } from './targetAids.ts';
 
 /**
  * The screen-space layer of the 3D renderer.

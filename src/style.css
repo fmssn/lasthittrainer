@@ -231,6 +231,22 @@ kbd {
   background: linear-gradient(180deg, rgba(10, 14, 17, 0.97), rgba(10, 14, 17, 0.99));
 }
 
+/* Shown while the creep rig loads, and reused to explain it if it never does. */
+.loading {
+  display: grid;
+  place-items: center;
+  text-align: center;
+}
+
+.loading-inner {
+  max-width: 460px;
+  padding: 24px;
+}
+
+.loading-inner p {
+  color: var(--muted);
+}
+
 .menu-inner,
 .results-inner {
   max-width: 940px;

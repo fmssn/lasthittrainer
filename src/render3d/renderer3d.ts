@@ -1,21 +1,24 @@
 import * as THREE from 'three';
 import type { Unit, Vec2 } from '../sim/types.ts';
 import type { World } from '../sim/world.ts';
-import type { GameRenderer } from '../render/gameRenderer.ts';
 import { Scene3D } from './scene.ts';
 import { UnitView, MODEL_HEIGHT, type CreepAsset } from './unitView.ts';
 import { Annotations } from './annotations.ts';
 import { ProjectileLayer } from './projectileView.ts';
-import { isPlayerTarget } from '../render/targetAids.ts';
+import { isPlayerTarget } from './targetAids.ts';
 
 /**
- * The three.js renderer, wired up as a drop-in for the 2D one.
+ * The renderer: a three.js stage plus a screen-space overlay.
  *
- * Everything the 2D painter draws as flat vector art splits in two here:
- * anything that lives on the ground plane (range rings, tower zones, the
- * killable pulse) is a real mesh, and anything that has to stay screen-sized
- * and legible (health bars, floaters, the windup arc) is drawn on a 2D overlay
- * canvas in {@link Annotations}. The sim is untouched by both.
+ * The drawing splits in two. Anything that lives on the ground plane (range
+ * rings, tower zones, the killable pulse) is real geometry, and anything that
+ * has to stay screen-sized and legible mid-swing (health bars, floaters, the
+ * windup arc) is drawn on a 2D canvas over the stage in {@link Annotations}.
+ *
+ * Screen points are CSS pixels relative to the canvas; world points are sim
+ * units. `#game` stays transparent on top as the pointer surface, with the
+ * stage canvases inserted underneath it, so input never changes hands.
+ * The sim is untouched by all of it.
  */
 
 /** Per-team base colour for the one creep rig, matching the 2D palette. */
@@ -109,7 +112,7 @@ function tintFor(unit: Unit): number {
   return base.multiplyScalar(k).getHex();
 }
 
-export class Renderer3D implements GameRenderer {
+export class Renderer3D {
   cursor: Vec2 = { x: 0, y: 0 };
   hoverId: number | null = null;
 
@@ -157,7 +160,7 @@ export class Renderer3D implements GameRenderer {
     this.resize();
   }
 
-  // ------------------------------------------------------------ GameRenderer
+  // ------------------------------------------------------------------ camera
 
   snap(target: Vec2) {
     this.stage.snap(target.x, target.y);
