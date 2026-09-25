@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { Unit, Vec2 } from '../sim/types.ts';
 import type { World } from '../sim/world.ts';
-import { DENY_THRESHOLD, attackPointTime } from '../sim/constants.ts';
+import { AGGRO_DURATION, DENY_THRESHOLD, attackPointTime } from '../sim/constants.ts';
 import { clamp } from '../sim/math.ts';
 import { isPlayerTarget } from './targetAids.ts';
 import { healthBarHeight } from './appearance.ts';
@@ -207,7 +207,7 @@ export class Annotations {
     ctx.lineWidth = 2;
     ctx.globalAlpha = 0.85;
     ctx.beginPath();
-    ctx.arc(s.x, s.y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (u.aggroTimer / 2.3));
+    ctx.arc(s.x, s.y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (u.aggroTimer / AGGRO_DURATION));
     ctx.stroke();
     ctx.globalAlpha = 1;
   }

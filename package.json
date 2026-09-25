@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "shot": "node tools/shot.mjs",
-    "check": "node tools/simcheck.mjs"
+    "check": "node tools/simcheck.mjs",
+    "balance": "node tools/balance.mjs"
   },
   "devDependencies": {
     "playwright": "^1.63.0",

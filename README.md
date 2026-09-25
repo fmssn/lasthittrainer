@@ -84,8 +84,14 @@ checks possible:
 ```bash
 npm run dev      # in one shell
 npm run check    # assert the sim; exits non-zero on the first failure
-npm run shot     # screenshot the menu and a formed lane at a fixed seed
+npm run shot     # screenshot the menu, a formed lane and results
+npm run balance  # difficulty calibration for the enemy laner
 ```
+
+`npm run balance` drives both heroes with the same laning AI and holds your
+side at level 3. Level 3 against level 3 comes out even — 8.7 last hits each —
+which is the check that matters: a lane where one side quietly farms better
+would flatter you and teach you nothing.
 
 `npm run check` drives a real Chromium against the dev server and imports the
 sim modules through vite, then asserts numbers — the reference values, swing

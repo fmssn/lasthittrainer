@@ -160,4 +160,9 @@ export class Scene3D {
     if (this.controls.enabled) this.controls.update();
     this.renderer.render(this.scene, this.camera);
   }
+
+  dispose() {
+    this.terrain.dispose();
+    this.controls.dispose();
+  }
 }

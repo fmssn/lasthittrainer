@@ -18,7 +18,8 @@ npm run preview  # serve dist/
 
 ```bash
 npm run check    # headless assertions against the simulation (needs npm run dev)
-npm run shot     # screenshot the menu and a formed lane (needs npm run dev)
+npm run shot     # screenshot the menu, a formed lane and results (needs npm run dev)
+npm run balance  # difficulty calibration for the bot (needs npm run dev)
 ```
 
 There is no linter. `npm run build` (i.e. `tsc --noEmit`) plus `npm run check`
@@ -35,6 +36,16 @@ behaviour, and a fixed-seed replay. Exits non-zero on the first failure.
 a fixed seed, so two runs frame the same moment and a renderer change can be
 looked at rather than argued about. A visual change that is not screenshotted
 is not reviewed.
+
+`npm run balance` (`tools/balance.mjs`) drives *both* heroes with the same
+laning AI and holds your side at level 3, so the only thing changing down the
+table is the opponent. It is a measurement, not a pass/fail, and it catches the
+one class of bug nothing else here can: a side bias. A lane where Radiant
+quietly farms better than Dire would flatter you for three minutes and teach
+you nothing, and staring at the code does not find it. Current reading —
+level 3 against level 3 comes out 8.7 last hits each, gap 0.0, and the ladder
+runs 2.3 -> 4.0 -> 8.7 -> 12.3 -> 12.0. Re-run it after touching creep AI,
+the bot, or anything in the combat path.
 
 To preview in-session, use `preview_start` with the launch config named
 `lasthittrainer` (`.claude/launch.json`); do not start the dev server via Bash.

@@ -260,6 +260,7 @@ export class Renderer3D {
     this.annotations.dispose();
     this.effects.dispose();
     this.bolts.dispose();
+    this.stage.dispose();
     this.stage.renderer.dispose();
     this.canvas.remove();
   }
