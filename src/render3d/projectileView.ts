@@ -1,59 +1,90 @@
 import * as THREE from 'three';
-import type { Projectile } from '../sim/types.ts';
+import type { Projectile, Unit } from '../sim/types.ts';
 import { World } from '../sim/world.ts';
+import type { Effects } from './effects.ts';
 
 /**
  * Projectiles on the 3D stage.
  *
- * The sim moves projectiles on the flat plane only (`p.pos`), so the height is
- * purely presentational: a shallow arc that launches at shoulder height and
- * lands on the target. Progress comes from how far the bolt has left to go
- * against the distance it had when first seen, so nothing needs to be stored
- * in the sim.
+ * Two things changed from the first pass, both in the direction of the real
+ * game. They are no longer spheres: a bolt is drawn as an elongated shape
+ * pointed along its own flight, which is what makes a shot read as travelling
+ * rather than drifting. And they no longer arc. Dota's attack projectiles fly
+ * flat from the attacker to the target, and the tall sine arc that used to be
+ * here was inventing airtime on top of the travel time the sim already models
+ * — on a 500-unit ranged creep shot that is most of the visual delay you are
+ * supposed to be learning to read.
+ *
+ * Height is still presentational — the sim moves projectiles on the flat plane
+ * only — but it is now a straight line from the shooter's shoulder to the
+ * target's chest.
  *
  * Reads World, writes nothing.
  */
 
-/** Launch/impact height in sim units — roughly a creep's shoulder. */
+/** Launch height in sim units — roughly a creep's shoulder. */
 const SHOULDER = 78;
-/** Peak lift above the straight line, at mid-flight. */
-const ARC = 90;
+/** Impact height: the middle of a body, not its feet. */
+const CHEST = 70;
+
+interface Look {
+  radius: number;
+  length: number;
+  color: number;
+}
 
 /**
- * Same split the 2D renderer uses: hero shots are gold, creep shots carry their
- * team colour, so a bolt tells you who is about to take damage before it lands.
+ * Who fired decides how it looks. Hero shots are gold and the largest, tower
+ * bolts heavier again, creep shots carry their team colour — so a bolt tells
+ * you who is about to take damage before it lands.
  */
-function look(p: Projectile): { radius: number; color: number } {
-  if (p.kind === 'hero') return { radius: 17, color: 0xffd479 };
-  return { radius: 12, color: p.team === 'radiant' ? 0x7fd6a2 : 0xf0a19c };
+function look(p: Projectile, source: Unit | undefined): Look {
+  if (source?.kind === 'tower') {
+    return { radius: 10, length: 58, color: p.team === 'radiant' ? 0x8affb0 : 0xff9a72 };
+  }
+  if (p.kind === 'hero') return { radius: 7, length: 46, color: 0xffd479 };
+  return { radius: 5, length: 30, color: p.team === 'radiant' ? 0x7fd6a2 : 0xf0a19c };
 }
 
 interface Tracked {
   mesh: THREE.Mesh;
+  color: number;
   /** Distance to the target when this projectile was first drawn. */
   startDist: number;
+  /** Last drawn position, so a vanished bolt can fizzle where it was. */
+  last: THREE.Vector3;
+  targetId: number;
+  /** Seconds since the last trail dot, so the trail is time-based not frame-based. */
+  sinceTrail: number;
 }
+
+const UP = new THREE.Vector3(0, 1, 0);
 
 export class ProjectileLayer {
   private tracked = new Map<number, Tracked>();
-  private geom = new THREE.SphereGeometry(1, 10, 8);
-  private materials = new Map<number, THREE.MeshStandardMaterial>();
+  /** One cone, pointed +Y, stretched per bolt by the mesh scale. */
+  private geom = new THREE.ConeGeometry(1, 1, 8);
+  private materials = new Map<number, THREE.MeshBasicMaterial>();
+  private readonly dir = new THREE.Vector3();
+  private readonly quat = new THREE.Quaternion();
 
-  constructor(private scene: THREE.Scene) {}
+  constructor(
+    private scene: THREE.Scene,
+    private effects: Effects,
+  ) {}
 
   private material(color: number) {
     let m = this.materials.get(color);
     if (!m) {
-      // Emissive so the bolt stays readable against the dark ground even when
-      // the sun is on the far side of the lane — but kept low, because at full
-      // strength every bolt clips to white and the team colour is lost.
-      m = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.45, roughness: 0.4 });
+      // Unlit on purpose: a bolt has to stay equally readable whichever side of
+      // the lane the sun is on, the same way Dota's do.
+      m = new THREE.MeshBasicMaterial({ color });
       this.materials.set(color, m);
     }
     return m;
   }
 
-  sync(world: World) {
+  sync(world: World, dt: number, rangedHits: Set<number>) {
     const seen = new Set<number>();
 
     for (const p of world.projectiles) {
@@ -65,23 +96,47 @@ export class ProjectileLayer {
 
       let t = this.tracked.get(p.id);
       if (!t) {
-        const { radius, color } = look(p);
-        const mesh = new THREE.Mesh(this.geom, this.material(color));
-        mesh.scale.setScalar(radius);
-        mesh.castShadow = true;
+        const l = look(p, world.units.get(p.sourceId));
+        const mesh = new THREE.Mesh(this.geom, this.material(l.color));
+        mesh.scale.set(l.radius, l.length, l.radius);
         this.scene.add(mesh);
-        t = { mesh, startDist: Math.max(dist, 1) };
+        t = {
+          mesh,
+          color: l.color,
+          startDist: Math.max(dist, 1),
+          last: new THREE.Vector3(),
+          targetId: p.targetId,
+          sinceTrail: 0,
+        };
         this.tracked.set(p.id, t);
       }
 
       const progress = THREE.MathUtils.clamp(1 - dist / t.startDist, 0, 1);
-      // sin() peaks at mid-flight and is zero at both ends, so the bolt leaves
-      // and arrives at shoulder height however long the shot is.
-      t.mesh.position.set(p.pos.x, SHOULDER + Math.sin(Math.PI * progress) * ARC, p.pos.y);
+      const y = SHOULDER + (CHEST - SHOULDER) * progress;
+      t.mesh.position.set(p.pos.x, y, p.pos.y);
+      t.last.copy(t.mesh.position);
+
+      // Point the cone down its own line of travel.
+      if (dist > 1e-3) {
+        this.dir.set(dx, 0, dz).normalize();
+        this.quat.setFromUnitVectors(UP, this.dir);
+        t.mesh.quaternion.copy(this.quat);
+      }
+
+      t.sinceTrail += dt;
+      if (t.sinceTrail >= 0.02) {
+        t.sinceTrail = 0;
+        this.effects.trail(p.pos.x, y, p.pos.y, t.color);
+      }
     }
 
     for (const [id, t] of this.tracked) {
       if (seen.has(id)) continue;
+      // The sim drops a projectile either because it arrived or because its
+      // target died first. An arrival logged projectile damage against that
+      // target and has already produced its impact; anything else disjointed,
+      // and should puff out rather than simply blinking away.
+      if (!rangedHits.has(t.targetId)) this.effects.fizzle(t.last.x, t.last.y, t.last.z, t.color);
       t.mesh.removeFromParent();
       this.tracked.delete(id);
     }

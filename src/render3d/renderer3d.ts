@@ -13,6 +13,7 @@ import {
 } from './appearance.ts';
 import { Annotations } from './annotations.ts';
 import { ProjectileLayer } from './projectileView.ts';
+import { Effects } from './effects.ts';
 import { isPlayerTarget } from './targetAids.ts';
 
 /**
@@ -107,6 +108,7 @@ export class Renderer3D {
   private readonly rings: THREE.Mesh[] = [];
   private ringsUsed = 0;
   private readonly bolts: ProjectileLayer;
+  private readonly effects: Effects;
   private readonly cursorRing: THREE.Mesh;
 
   private readonly raycaster = new THREE.Raycaster();
@@ -131,7 +133,8 @@ export class Renderer3D {
 
     this.stage = new Scene3D(this.canvas);
     this.annotations = new Annotations(container, before, this.stage.camera);
-    this.bolts = new ProjectileLayer(this.stage.scene);
+    this.effects = new Effects(this.stage.scene);
+    this.bolts = new ProjectileLayer(this.stage.scene, this.effects);
 
     this.cursorRing = this.makeRing(26, 0xffffff, 0.35);
     this.stage.scene.add(this.cursorRing);
@@ -231,7 +234,8 @@ export class Renderer3D {
     for (let i = this.ringsUsed; i < this.rings.length; i++) this.rings[i].visible = false;
 
     this.cursorRing.position.set(this.cursor.x, 2, this.cursor.y);
-    this.bolts.sync(world);
+    this.bolts.sync(world, dt, this.effects.consume(world));
+    this.effects.update(dt);
 
     this.stage.render();
     this.annotations.draw(world, this.hoverId);
@@ -242,6 +246,8 @@ export class Renderer3D {
     this.observer.disconnect();
     this.clearScene();
     this.annotations.dispose();
+    this.effects.dispose();
+    this.bolts.dispose();
     this.stage.renderer.dispose();
     this.canvas.remove();
   }
@@ -381,6 +387,7 @@ export class Renderer3D {
     this.towers.clear();
     for (const r of this.rings) r.visible = false;
     this.bolts.clear();
+    this.effects.clear();
   }
 
   /** Debug only: how many rigs are playing each clip. Drives the slice readout. */

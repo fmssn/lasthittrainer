@@ -1,4 +1,13 @@
-import type { FloaterKind, FloatingText, KillEvent, Projectile, Team, Unit, Vec2 } from './types.ts';
+import type {
+  DamageEvent,
+  FloaterKind,
+  FloatingText,
+  KillEvent,
+  Projectile,
+  Team,
+  Unit,
+  Vec2,
+} from './types.ts';
 import {
   AGGRO_COOLDOWN,
   AGGRO_DURATION,
@@ -66,6 +75,8 @@ export class World {
   projectiles: Projectile[] = [];
   floaters: FloatingText[] = [];
   killLog: KillEvent[] = [];
+  /** Landed attacks, newest last. Capped; consumers follow `seq`. */
+  damageLog: DamageEvent[] = [];
 
   player!: Unit;
   enemy: Unit | null = null;
@@ -90,6 +101,7 @@ export class World {
   };
 
   private nextProjectileId = 1;
+  private nextDamageSeq = 1;
   private enemyAi: EnemyHeroAi | null = null;
 
   constructor(config: DrillConfig) {
@@ -580,7 +592,7 @@ export class World {
       if (step >= d) {
         target.incomingDamage = Math.max(0, target.incomingDamage - p.damage);
         this.projectiles.splice(i, 1);
-        if (source) this.applyDamage(source, target, p.damage);
+        if (source) this.applyDamage(source, target, p.damage, true);
         continue;
       }
       const a = angleTo(p.pos, target.pos);
@@ -589,10 +601,23 @@ export class World {
     }
   }
 
-  private applyDamage(source: Unit, target: Unit, dmg: number) {
+  private applyDamage(source: Unit, target: Unit, dmg: number, ranged = false) {
     if (!target.alive) return;
     if (target.kind === 'tower') return;
     target.hp -= dmg;
+
+    this.damageLog.push({
+      seq: this.nextDamageSeq++,
+      pos: { x: target.pos.x, y: target.pos.y },
+      targetId: target.id,
+      sourceKind: source.kind,
+      sourceTeam: source.team,
+      ranged,
+      amount: dmg,
+      lethal: target.hp <= 0,
+    });
+    if (this.damageLog.length > 256) this.damageLog.splice(0, this.damageLog.length - 256);
+
     const kind: FloaterKind =
       source.id === this.player.id
         ? 'player_damage'

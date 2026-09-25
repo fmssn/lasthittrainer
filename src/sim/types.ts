@@ -98,6 +98,25 @@ export interface FloatingText {
   rise: number;
 }
 
+/**
+ * One landed attack. This is simulation output, not a drawing instruction: the
+ * renderer reads it to place impact effects, and it is a record of what the
+ * fight did whether or not anything is drawing. Consumers track `seq` rather
+ * than the array, because the log is capped and old entries fall off the front.
+ */
+export interface DamageEvent {
+  seq: number;
+  pos: Vec2;
+  targetId: number;
+  sourceKind: UnitKind;
+  sourceTeam: Team;
+  /** True when the damage arrived as a projectile rather than a melee swing. */
+  ranged: boolean;
+  amount: number;
+  /** This hit is what killed the target. */
+  lethal: boolean;
+}
+
 export type KillCredit = 'player' | 'enemy_hero' | 'creep' | 'none';
 
 export interface KillEvent {
