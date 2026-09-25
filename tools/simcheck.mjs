@@ -358,6 +358,65 @@ const results = await page.evaluate(async () => {
   return out;
 });
 
+// --- Phase 2: the input path ----------------------------------------------
+// Picking is the renderer's job, not the sim's, so nothing above touches it.
+// This is the only check that covers pickUnit -> orderAttack end to end: a real
+// right-click at a real screen position, against the upright cylinders the
+// renderer tests the cursor ray against.
+await page.evaluate(() => {
+  window.__lht.start({
+    heroId: 'shadow_fiend',
+    duration: 600,
+    deniesEnabled: true,
+    enemyHero: false,
+    enemyHeroId: 'crystal_maiden',
+    enemyDifficulty: 3,
+    aggroEnabled: true,
+    showKillableHighlight: true,
+    showRangeRings: true,
+    showDamagePreview: true,
+    seed: 4242,
+  });
+});
+await page.waitForTimeout(2500);
+
+const aim = await page.evaluate(() => {
+  const w = window.__lht.world;
+  const creep = [...w.units.values()].find(
+    (u) => u.alive && u.team === 'dire' && u.kind === 'melee_creep',
+  );
+  if (!creep) return null;
+  // Aim at the chest, which is what the cursor looks like it is over and the
+  // whole reason picking uses a cylinder instead of the ground point.
+  return { id: creep.id, at: window.__lht.toScreen(creep.pos, 55) };
+});
+
+if (!aim) {
+  results.push({ name: 'a dire creep exists to click', ok: false, actual: 'none', expected: 'one' });
+} else {
+  await page.mouse.click(aim.at.x, aim.at.y, { button: 'right' });
+  const ordered = await page.evaluate(() => window.__lht.world.player.attackTargetId);
+  results.push({
+    name: 'right-clicking a creep orders an attack on it',
+    ok: ordered === aim.id,
+    actual: ordered,
+    expected: aim.id,
+  });
+
+  // And empty lane must stay a move order, not grab whatever is nearest.
+  await page.mouse.click(60, 700, { button: 'right' });
+  const after = await page.evaluate(() => ({
+    target: window.__lht.world.player.attackTargetId,
+    moving: !!window.__lht.world.player.moveTarget,
+  }));
+  results.push({
+    name: 'right-clicking empty lane is a move order',
+    ok: after.target === null && after.moving,
+    actual: JSON.stringify(after),
+    expected: '{"target":null,"moving":true}',
+  });
+}
+
 await browser.close();
 
 let failed = 0;

@@ -194,5 +194,9 @@ if (import.meta.env.DEV) {
     },
     start,
     finish,
+    /** Draw-call and triangle budget, for the perf sanity check in tools/. */
+    renderStats: () => renderer.stats(),
+    /** Screen position of a sim point, so a harness can click on a unit. */
+    toScreen: (p: { x: number; y: number }, up = 0) => renderer.toScreen(p, up),
   };
 }

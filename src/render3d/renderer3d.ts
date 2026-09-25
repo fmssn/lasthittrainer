@@ -412,6 +412,35 @@ export class Renderer3D {
     this.effects.clear();
   }
 
+  /**
+   * Where a sim point lands on screen, in CSS pixels. The inverse of
+   * {@link toWorld}, and the only way anything outside the renderer can aim at
+   * a unit — which is what lets the harness click on one.
+   */
+  toScreen(p: Vec2, up = 0): Vec2 {
+    const v = new THREE.Vector3(p.x, up, p.y).project(this.stage.camera);
+    const w = this.canvas.clientWidth || 1;
+    const h = this.canvas.clientHeight || 1;
+    return { x: (v.x * 0.5 + 0.5) * w, y: (-v.y * 0.5 + 0.5) * h };
+  }
+
+  /**
+   * Debug only: what the last frame cost. Triangle and draw-call counts are the
+   * only performance numbers worth trusting from this project's own harness —
+   * it renders through SwiftShader, so frame times here say nothing about a
+   * real GPU.
+   */
+  stats() {
+    const info = this.stage.renderer.info;
+    return {
+      calls: info.render.calls,
+      triangles: info.render.triangles,
+      geometries: info.memory.geometries,
+      textures: info.memory.textures,
+      rigs: this.views.size,
+    };
+  }
+
   /** Debug only: how many rigs are playing each clip. Drives the slice readout. */
   clipHistogram(): Record<string, number> {
     const hist: Record<string, number> = {};

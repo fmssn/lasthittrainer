@@ -30,7 +30,10 @@ Chromium against the dev server and imports the actual sim modules through
 vite, then asserts numbers. That is what lets it exist without dragging a
 toolchain into a project whose only dependency is three. It covers the Dota
 reference values, swing timing to the frame, creep targeting and aggro, contact
-behaviour, and a fixed-seed replay. Exits non-zero on the first failure.
+behaviour, and a fixed-seed replay. It finishes with a real right-click at a
+real screen position, which is the only thing covering `pickUnit` ->
+`orderAttack` end to end — picking is the renderer's job, so none of the sim
+checks touch it. Exits non-zero on the first failure.
 
 `npm run shot` (`tools/shot.mjs`) captures the menu and a lane 14 seconds in at
 a fixed seed, so two runs frame the same moment and a renderer change can be
@@ -131,6 +134,17 @@ tools/blender/    Headless Blender script that generates public/models/melee_cre
   range, then prefers whatever is already in range over chasing. A swing already
   under way is never re-aimed, because the release reads `attackTargetId` at
   release time and would otherwise hand the damage to the new target.
+
+### Performance
+
+Measured over 45 seconds of a level-5 lane: peak 210 draw calls, 16k triangles,
+10 rigs. Rocks and trees are one instanced mesh each. The 220 impact sprites are
+individual draw calls, which is the one thing here that could scale badly, but
+it never gets near saturation in practice — so it stays simple.
+
+Frame times from this project's own harness mean nothing: it renders through
+SwiftShader. Draw-call and triangle counts are the only numbers worth trusting
+from `__lht.renderStats()`; real performance needs a real GPU.
 
 ### Rendering
 
