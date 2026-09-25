@@ -1,13 +1,11 @@
 import './style.css';
 import { World } from './sim/world.ts';
 import type { DrillConfig } from './sim/config.ts';
-import { Renderer } from './render/renderer.ts';
-import type { GameRenderer } from './render/gameRenderer.ts';
 import { Renderer3D } from './render3d/renderer3d.ts';
 import { loadCreep, type CreepAsset } from './render3d/unitView.ts';
 import { Input } from './input.ts';
 import { Hud } from './ui/hud.ts';
-import { Menu, type RenderMode } from './ui/menu.ts';
+import { Menu } from './ui/menu.ts';
 import { Results } from './ui/results.ts';
 
 const SIM_STEP = 1 / 120;
@@ -21,11 +19,11 @@ const app = document.getElementById('app') as HTMLDivElement;
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const overlay = document.getElementById('overlay') as HTMLDivElement;
 
-// #game is always the pointer surface, whichever renderer is drawing: in 3D it
-// simply stays transparent while the stage renders underneath it.
-let renderer: GameRenderer = new Renderer(canvas);
-let renderMode: RenderMode = '2d';
-const input = new Input(canvas, renderer);
+// Both are built by boot(), once the creep rig is in memory — there is nothing
+// to draw with until then. #game is the pointer surface: the stage canvases go
+// underneath it and it stays transparent on top, so input never changes hands.
+let renderer: Renderer3D;
+let input: Input;
 const hud = new Hud(overlay);
 
 let state: State = 'menu';
@@ -34,11 +32,7 @@ let lastConfig: DrillConfig | null = null;
 let accumulator = 0;
 let lastFrame = performance.now();
 
-const menu = new Menu(
-  overlay,
-  (config) => start(config),
-  (mode) => void setRenderMode(mode),
-);
+const menu = new Menu(overlay, (config) => start(config));
 const results = new Results(
   overlay,
   () => {
@@ -47,34 +41,45 @@ const results = new Results(
   () => toMenu(),
 );
 
-/** The GLB is fetched once and shared by every 3D renderer instance. */
-let creepAsset: Promise<CreepAsset> | null = null;
+/**
+ * Bring up the renderer, then the menu.
+ *
+ * The creep rig has to be in memory before anything can be drawn, and there is
+ * no second renderer to fall back to any more, so a failure here is fatal and
+ * says so on screen rather than leaving a black canvas and a dead Start button.
+ */
+async function boot() {
+  const loading = document.createElement('div');
+  loading.className = 'screen loading';
+  loading.innerHTML = `
+    <div class="loading-inner">
+      <h1>Last Hit Trainer</h1>
+      <p data-msg>Loading the lane\u2026</p>
+    </div>`;
+  overlay.appendChild(loading);
 
-async function setRenderMode(mode: RenderMode) {
-  if (mode === renderMode) return;
-  let next: GameRenderer;
-  if (mode === '3d') {
-    try {
-      next = new Renderer3D(app, canvas, await (creepAsset ??= loadCreep('/models/melee_creep.glb')));
-    } catch (err) {
-      // A missing or broken GLB must not cost the player their drill.
-      creepAsset = null;
-      menu.renderNote = `3D unavailable: ${(err as Error).message}. Staying on 2D.`;
-      menu.setRenderMode('2d');
-      console.error(err);
-      return;
-    }
-  } else {
-    next = new Renderer(canvas);
+  let asset: CreepAsset;
+  try {
+    asset = await loadCreep('/models/melee_creep.glb');
+  } catch (err) {
+    // textContent, not innerHTML: the message comes from a loader, not from us.
+    loading.querySelector('h1')!.textContent = 'Could not start';
+    loading.querySelector('[data-msg]')!.textContent =
+      `The creep model failed to load: ${(err as Error).message}. Reload to try again.`;
+    console.error(err);
+    return;
   }
+  loading.remove();
 
-  next.cursor = renderer.cursor;
-  next.hoverId = renderer.hoverId;
-  renderer.dispose();
-  renderer = next;
-  renderMode = mode;
-  input.setRenderer(next);
-  next.snap((world ?? backdrop)?.player.pos ?? { x: 0, y: 0 });
+  renderer = new Renderer3D(app, canvas, asset);
+  input = new Input(canvas, renderer);
+  input.onPause = () => {
+    if (state === 'playing') setPaused(true);
+    else if (state === 'paused') setPaused(false);
+  };
+
+  menu.show();
+  requestAnimationFrame(frame);
 }
 
 const pauseScreen = document.createElement('div');
@@ -99,11 +104,6 @@ pauseScreen.querySelector('[data-quit]')?.addEventListener('click', () => toMenu
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && state === 'playing') setPaused(true);
 });
-
-input.onPause = () => {
-  if (state === 'playing') setPaused(true);
-  else if (state === 'paused') setPaused(false);
-};
 
 function start(config: DrillConfig) {
   lastConfig = config;
@@ -159,7 +159,7 @@ function frame(now: number) {
     // Lead the camera toward the enemy side; that is where the creeps you are
     // farming always are.
     renderer.follow(world.player.pos, elapsed, CAMERA_LEAD);
-    hud.update(world, input.isAttackCursor);
+    hud.update(world, input.isAttackReady());
     if (world.finished) finish();
   }
 
@@ -183,9 +183,8 @@ function emptyWorld(): World {
 }
 
 hud.hide();
-// Restore the renderer the player last used, once the menu exists to report a failure.
-void setRenderMode(menu.renderMode);
-requestAnimationFrame(frame);
+menu.hide();
+void boot();
 
 if (import.meta.env.DEV) {
   // Handle for poking at a live drill from the console.

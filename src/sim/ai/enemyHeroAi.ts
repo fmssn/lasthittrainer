@@ -1,7 +1,7 @@
 import type { Team, Unit } from '../types.ts';
 import type { World } from '../world.ts';
 import type { EnemyProfile } from '../config.ts';
-import { AGGRO_TRIGGER_RANGE, DENY_THRESHOLD, armorMultiplier } from '../constants.ts';
+import { DENY_THRESHOLD, aggroTriggerRange, armorMultiplier } from '../constants.ts';
 import { angleTo, dist } from '../math.ts';
 
 interface Memory {
@@ -157,7 +157,7 @@ export class EnemyHeroAi {
     let nearby = 0;
     for (const u of world.units.values()) {
       if (!u.alive || u.kind !== 'melee_creep' || u.team === this.own) continue;
-      if (dist(u.pos, this.hero.pos) <= AGGRO_TRIGGER_RANGE) nearby++;
+      if (dist(u.pos, this.hero.pos) <= aggroTriggerRange(u.kind)) nearby++;
     }
     if (nearby >= 2) {
       this.harassCooldown = 2;

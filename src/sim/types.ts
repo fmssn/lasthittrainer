@@ -62,6 +62,8 @@ export interface Unit {
   /** Forced aggro: unit id and remaining seconds. */
   aggroTargetId: number | null;
   aggroTimer: number;
+  /** Heroes only: seconds until this unit's next aggro check is allowed. */
+  aggroCooldown: number;
 
   /** Set once a projectile is inbound that will finish this unit, for AI bookkeeping. */
   incomingDamage: number;

@@ -1,21 +1,24 @@
 import * as THREE from 'three';
 import type { Unit, Vec2 } from '../sim/types.ts';
 import type { World } from '../sim/world.ts';
-import type { GameRenderer } from '../render/gameRenderer.ts';
 import { Scene3D } from './scene.ts';
-import { UnitView, type CreepAsset } from './unitView.ts';
+import { UnitView, MODEL_HEIGHT, type CreepAsset } from './unitView.ts';
 import { Annotations } from './annotations.ts';
 import { ProjectileLayer } from './projectileView.ts';
-import { isPlayerTarget } from '../render/targetAids.ts';
+import { isPlayerTarget } from './targetAids.ts';
 
 /**
- * The three.js renderer, wired up as a drop-in for the 2D one.
+ * The renderer: a three.js stage plus a screen-space overlay.
  *
- * Everything the 2D painter draws as flat vector art splits in two here:
- * anything that lives on the ground plane (range rings, tower zones, the
- * killable pulse) is a real mesh, and anything that has to stay screen-sized
- * and legible (health bars, floaters, the windup arc) is drawn on a 2D overlay
- * canvas in {@link Annotations}. The sim is untouched by both.
+ * The drawing splits in two. Anything that lives on the ground plane (range
+ * rings, tower zones, the killable pulse) is real geometry, and anything that
+ * has to stay screen-sized and legible mid-swing (health bars, floaters, the
+ * windup arc) is drawn on a 2D canvas over the stage in {@link Annotations}.
+ *
+ * Screen points are CSS pixels relative to the canvas; world points are sim
+ * units. `#game` stays transparent on top as the pointer surface, with the
+ * stage canvases inserted underneath it, so input never changes hands.
+ * The sim is untouched by all of it.
  */
 
 /** Per-team base colour for the one creep rig, matching the 2D palette. */
@@ -37,6 +40,64 @@ const SCALE: Record<string, number> = {
 /** Ring line thickness in sim units — constant, so far rings stay visible. */
 const RING_WIDTH = 7;
 
+/** Height of the tower body, mirroring the cylinder {@link towerMesh} builds. */
+const TOWER_HEIGHT = 260;
+/**
+ * Slack added to a unit's sim radius when picking, matching the ground-plane
+ * tolerance in `World.unitAt` so both renderers feel the same at the feet.
+ */
+const PICK_PAD = 16;
+
+/** Height of a unit's drawn volume in sim units — what the cursor ray tests. */
+function pickHeight(unit: Unit): number {
+  return unit.kind === 'tower' ? TOWER_HEIGHT : MODEL_HEIGHT * (SCALE[unit.kind] ?? 1);
+}
+
+/**
+ * Distance along `ray` at which it enters an upright cylinder standing on the
+ * lane, or null if it misses. Slab method: the side wall gives one t-interval
+ * and the y range another, and a hit is where the two overlap.
+ */
+function rayCylinder(ray: THREE.Ray, cx: number, cz: number, r: number, h: number): number | null {
+  const ox = ray.origin.x - cx;
+  const oz = ray.origin.z - cz;
+  const dx = ray.direction.x;
+  const dz = ray.direction.z;
+
+  let tSide0 = -Infinity;
+  let tSide1 = Infinity;
+  const a = dx * dx + dz * dz;
+  if (a > 1e-9) {
+    const b = 2 * (ox * dx + oz * dz);
+    const c = ox * ox + oz * oz - r * r;
+    const disc = b * b - 4 * a * c;
+    if (disc < 0) return null;
+    const root = Math.sqrt(disc);
+    tSide0 = (-b - root) / (2 * a);
+    tSide1 = (-b + root) / (2 * a);
+  } else if (ox * ox + oz * oz > r * r) {
+    // Ray runs straight down the cylinder's axis and starts outside it.
+    return null;
+  }
+
+  let tY0 = -Infinity;
+  let tY1 = Infinity;
+  const dy = ray.direction.y;
+  const oy = ray.origin.y;
+  if (Math.abs(dy) > 1e-9) {
+    tY0 = -oy / dy;
+    tY1 = (h - oy) / dy;
+    if (tY0 > tY1) [tY0, tY1] = [tY1, tY0];
+  } else if (oy < 0 || oy > h) {
+    return null;
+  }
+
+  const enter = Math.max(tSide0, tY0);
+  const exit = Math.min(tSide1, tY1);
+  if (enter > exit || exit < 0) return null;
+  return Math.max(enter, 0);
+}
+
 interface Rec {
   view: UnitView;
   /** Last seen sim state, kept so a unit removed mid-death still falls over. */
@@ -51,7 +112,7 @@ function tintFor(unit: Unit): number {
   return base.multiplyScalar(k).getHex();
 }
 
-export class Renderer3D implements GameRenderer {
+export class Renderer3D {
   cursor: Vec2 = { x: 0, y: 0 };
   hoverId: number | null = null;
 
@@ -99,7 +160,7 @@ export class Renderer3D implements GameRenderer {
     this.resize();
   }
 
-  // ------------------------------------------------------------ GameRenderer
+  // ------------------------------------------------------------------ camera
 
   snap(target: Vec2) {
     this.stage.snap(target.x, target.y);
@@ -120,6 +181,44 @@ export class Renderer3D implements GameRenderer {
     // The lane is the y=0 plane, so every click resolves to exactly one point.
     const p = this.raycaster.ray.intersectPlane(this.ground, this.hit);
     return p ? { x: p.x, y: p.z } : { ...this.cursor };
+  }
+
+  /**
+   * Nearest unit whose drawn volume the cursor ray crosses.
+   *
+   * The ground-plane answer from {@link toWorld} is no use on its own here: a
+   * rig stands ~100 sim units tall, so aiming at its chest resolves to a lane
+   * point tens of units behind its feet — past the pick radius, and the click
+   * reads as a move order. Testing an upright cylinder per unit makes the whole
+   * visible body clickable, which is what the cursor looks like it is over.
+   */
+  pickUnit(screen: Vec2, world: World, forUnit: Unit): Unit | null {
+    const w = this.canvas.clientWidth || 1;
+    const h = this.canvas.clientHeight || 1;
+    this.raycaster.setFromCamera(
+      new THREE.Vector2((screen.x / w) * 2 - 1, -(screen.y / h) * 2 + 1),
+      this.stage.camera,
+    );
+
+    let best: Unit | null = null;
+    let bestT = Infinity;
+    for (const unit of world.units.values()) {
+      if (!unit.alive || unit.id === forUnit.id) continue;
+      const t = rayCylinder(
+        this.raycaster.ray,
+        unit.pos.x,
+        unit.pos.y,
+        unit.radius + PICK_PAD,
+        pickHeight(unit),
+      );
+      if (t !== null && t < bestT) {
+        bestT = t;
+        best = unit;
+      }
+    }
+    // Nothing under the cursor still means the lane point may sit on a unit's
+    // feet — a click just short of a rig should grab it, as in the 2D view.
+    return best ?? world.unitAt(this.toWorld(screen), forUnit);
   }
 
   zoom(delta: number) {

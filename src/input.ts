@@ -1,22 +1,26 @@
-import type { GameRenderer } from './render/gameRenderer.ts';
+import type { Renderer3D } from './render3d/renderer3d.ts';
+import type { Vec2 } from './sim/types.ts';
 import type { World } from './sim/world.ts';
 
 /**
  * Dota-style controls:
  *   right click        move, or attack an enemy under the cursor
- *   A + left click     attack-move, and the only way to deny your own creep
+ *   A                  attack or deny whatever the cursor is over, else
+ *                      attack-move there. The only way to deny your own creep,
+ *                      and — aimed at one — the way to hand creep aggro back
  *   S                  stop (cancels the backswing, frees the next order)
  *   scroll             zoom
  *   space              pause
  */
 export class Input {
-  private attackCursor = false;
   private world: World | null = null;
+  /** Cursor in canvas pixels, so a keystroke can aim at what the mouse is over. */
+  private lastScreen: Vec2 = { x: 0, y: 0 };
   onPause: (() => void) | null = null;
 
   constructor(
     private canvas: HTMLCanvasElement,
-    private renderer: GameRenderer,
+    private renderer: Renderer3D,
   ) {
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     canvas.addEventListener('mousedown', (e) => this.onMouseDown(e));
@@ -25,31 +29,46 @@ export class Input {
     window.addEventListener('keydown', (e) => this.onKeyDown(e));
   }
 
-  /** Swap the renderer under the same pointer surface when the mode changes. */
-  setRenderer(renderer: GameRenderer) {
-    this.renderer = renderer;
-  }
-
   attach(world: World | null) {
     this.world = world;
-    this.attackCursor = false;
-    this.canvas.classList.remove('attack-cursor');
   }
 
-  get isAttackCursor() {
-    return this.attackCursor;
+  /**
+   * Whether pressing A right now would land on a unit. Drives the HUD hint, so
+   * a creep crossing the deny line reads as denyable before the key is pressed.
+   */
+  isAttackReady(): boolean {
+    const world = this.world;
+    if (!world || !world.player.alive || world.finished) return false;
+    const target = this.renderer.pickUnit(this.lastScreen, world, world.player);
+    return target !== null && world.canTarget(world.player, target);
   }
 
-  private point(e: MouseEvent) {
+  private screen(e: MouseEvent) {
     const rect = this.canvas.getBoundingClientRect();
-    return this.renderer.toWorld({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+
+  /** Where the order lands: the lane point under the cursor. */
+  private point(e: MouseEvent) {
+    return this.renderer.toWorld(this.screen(e));
+  }
+
+  /**
+   * What the order is aimed at. The renderer answers this rather than the sim,
+   * because on the 3D stage a unit is clickable well above the lane point its
+   * cursor resolves to.
+   */
+  private pick(e: MouseEvent, world: World) {
+    return this.renderer.pickUnit(this.screen(e), world, world.player);
   }
 
   private onMouseMove(e: MouseEvent) {
+    this.lastScreen = this.screen(e);
     const p = this.point(e);
     this.renderer.cursor = p;
     const world = this.world;
-    this.renderer.hoverId = world ? (world.unitAt(p, world.player)?.id ?? null) : null;
+    this.renderer.hoverId = world ? (this.pick(e, world)?.id ?? null) : null;
   }
 
   private onMouseDown(e: MouseEvent) {
@@ -59,20 +78,11 @@ export class Input {
 
     if (e.button === 2) {
       e.preventDefault();
-      const target = world.unitAt(p, world.player);
-      // Right click never attacks your own units — denying takes an A-click,
-      // same as the real game.
+      const target = this.pick(e, world);
+      // Right click never attacks your own units — denying takes A, so a
+      // panicked right click can never throw away your own creep.
       if (target && target.team !== world.player.team) world.orderAttack(world.player, target);
       else world.orderMove(world.player, p);
-      this.setAttackCursor(false);
-      return;
-    }
-
-    if (e.button === 0 && this.attackCursor) {
-      const target = world.unitAt(p, world.player);
-      if (target && world.canTarget(world.player, target)) world.orderAttack(world.player, target);
-      else world.orderAttackMove(world.player, p);
-      this.setAttackCursor(false);
     }
   }
 
@@ -94,17 +104,24 @@ export class Input {
     if (!world || !world.player.alive) return;
 
     if (key === 'a') {
-      this.setAttackCursor(!this.attackCursor);
+      // A fires on the cursor straight away rather than arming a second click:
+      // a deny window is a handful of frames wide, and the click was spending
+      // them. What the cursor is over is attacked or denied, empty lane is an
+      // attack-move, which is the same pair of orders A + LMB used to give.
+      const target = this.renderer.pickUnit(this.lastScreen, world, world.player);
+      // Ally or enemy, the order goes to orderAttack: an attack order on your
+      // own creep is what hands creep aggro back, and it does that whether or
+      // not the creep is low enough to actually deny. Only empty lane is an
+      // attack-move.
+      if (target) {
+        world.orderAttack(world.player, target);
+      } else {
+        world.orderAttackMove(world.player, this.renderer.toWorld(this.lastScreen));
+      }
     } else if (key === 's') {
       world.orderStop(world.player);
-      this.setAttackCursor(false);
     } else if (key === 'h') {
       world.orderStop(world.player);
     }
-  }
-
-  private setAttackCursor(on: boolean) {
-    this.attackCursor = on;
-    this.canvas.classList.toggle('attack-cursor', on);
   }
 }
