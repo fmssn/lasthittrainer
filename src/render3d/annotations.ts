@@ -41,7 +41,7 @@ export class Annotations {
   constructor(
     container: HTMLElement,
     before: HTMLElement,
-    private readonly camera: THREE.OrthographicCamera,
+    private readonly camera: THREE.PerspectiveCamera,
   ) {
     this.canvas = document.createElement('canvas');
     this.canvas.className = 'stage3d-hud';
@@ -71,9 +71,15 @@ export class Annotations {
     return { x: (this.v.x * 0.5 + 0.5) * this.w, y: (-this.v.y * 0.5 + 0.5) * this.h };
   }
 
-  /** Pixels per sim unit. Constant across the frame because the camera is orthographic. */
-  private get pxPerUnit(): number {
-    return this.h / (this.camera.top - this.camera.bottom);
+  /**
+   * Pixels per sim unit near `p`. Not one number for the frame: under a
+   * perspective camera a unit at the far end of the lane is smaller than one
+   * at the near end, so it is measured by projecting a known span there.
+   */
+  private pxPerUnitAt(p: Vec2): number {
+    const a = this.project(p);
+    const b = this.project({ x: p.x + 100, y: p.y });
+    return Math.hypot(b.x - a.x, b.y - a.y) / 100;
   }
 
   draw(world: World, hoverId: number | null) {
@@ -155,7 +161,7 @@ export class Annotations {
   private drawWindup(u: Unit) {
     const ctx = this.ctx;
     const s = this.project(u.pos);
-    const r = Math.max(10, u.radius * this.pxPerUnit + 6);
+    const r = Math.max(10, u.radius * this.pxPerUnitAt(u.pos) + 6);
     const total = attackPointTime(u.attackPoint, u.attackSpeedBonus);
     const p = clamp(1 - u.phaseTimer / total, 0, 1);
     ctx.strokeStyle = u.kind === 'hero' ? COLORS.killable : 'rgba(255,255,255,0.55)';
@@ -169,7 +175,7 @@ export class Annotations {
   private drawAggro(u: Unit) {
     const ctx = this.ctx;
     const s = this.project(u.pos);
-    const r = Math.max(8, u.radius * this.pxPerUnit + 2);
+    const r = Math.max(8, u.radius * this.pxPerUnitAt(u.pos) + 2);
     ctx.strokeStyle = '#ff9f43';
     ctx.lineWidth = 2;
     ctx.globalAlpha = 0.8;
