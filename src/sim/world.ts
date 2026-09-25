@@ -36,6 +36,29 @@ export const DIRE_SPAWN = 5600;
 export const LANE_CENTER = (RADIANT_SPAWN + DIRE_SPAWN) / 2;
 export const HERO_RESPAWN_TIME = 6;
 
+/**
+ * How much of a contact goes into sliding past rather than backing off.
+ *
+ * Worth being honest about what this does and does not buy. It fixes contact
+ * behaviour: without it two units meeting head-on grind along the lane locked
+ * together, because a pure normal shove gives neither of them a way around.
+ * What it does not buy is creep blocking in any meaningful sense — measured,
+ * one hero interposing costs a four-creep wave about 3% of its progress at any
+ * setting, because one body can only touch one creep and the front of the wave
+ * keeps changing. Real blocking happens on the narrow path out of the barracks,
+ * which this drill does not have: waves spawn into open lane.
+ */
+const SLIDE = 0.45;
+
+/**
+ * How hard a unit is to shove. A hero outweighs a lane creep by enough to hold
+ * a line in front of one, and buildings do not budge.
+ */
+function pushMass(u: Unit): number {
+  if (u.moveSpeed <= 0) return Infinity;
+  return u.kind === 'hero' ? 3 : 1;
+}
+
 function floaterColor(kind: FloaterKind): string {
   if (kind === 'player_damage') return '#ffd479';
   if (kind === 'incoming_damage') return '#ff8b7a';
@@ -465,7 +488,13 @@ export class World {
     return Math.abs(angleDelta(u.facing, angleTo(u.pos, target.pos))) < 0.15;
   }
 
-  /** Keep units from stacking on one pixel. Cheap, not a real pathfinder. */
+  /**
+   * Keep units from stacking on one pixel. Cheap, not a real pathfinder.
+   *
+   * The split is by mass rather than evenly: a hero shouldered by a lane creep
+   * should barely move and the creep should go around, which an even split got
+   * backwards by sliding both aside equally.
+   */
   private separate() {
     const list = this.aliveUnits();
     for (let i = 0; i < list.length; i++) {
@@ -480,13 +509,28 @@ export class World {
         if (d >= min || d === 0) continue;
         const nx = dx / d;
         const ny = dy / d;
-        // Immobile units do not get shoved; the other one absorbs the whole push.
-        const aShare = a.moveSpeed <= 0 ? 0 : b.moveSpeed <= 0 ? 1 : 0.5;
+        // Each unit gives way in proportion to the *other's* mass, so the
+        // heavier one barely moves. Immobile units never move at all.
+        const ma = pushMass(a);
+        const mb = pushMass(b);
+        const aShare = !Number.isFinite(ma) ? 0 : !Number.isFinite(mb) ? 1 : mb / (ma + mb);
         const push = min - d;
-        a.pos.x -= nx * push * aShare;
-        a.pos.y -= ny * push * aShare;
-        b.pos.x += nx * push * (1 - aShare);
-        b.pos.y += ny * push * (1 - aShare);
+
+        // Tangential slide. A purely head-on shove lets one unit stall another
+        // indefinitely — the two just grind along the lane locked together —
+        // because nothing ever steps around. Dota's creeps path around what is
+        // in the way, so the contact also nudges them past each other. Which
+        // way is decided by id parity rather than the rng, so that separation
+        // stays deterministic without eating the seeded stream every frame.
+        const side = (a.id + b.id) % 2 === 0 ? 1 : -1;
+        const slide = push * SLIDE * side;
+        const tx = -ny * slide;
+        const ty = nx * slide;
+
+        a.pos.x -= (nx * push + tx) * aShare;
+        a.pos.y -= (ny * push + ty) * aShare;
+        b.pos.x += (nx * push + tx) * (1 - aShare);
+        b.pos.y += (ny * push + ty) * (1 - aShare);
         a.pos.y = clamp(a.pos.y, -LANE_HALF_WIDTH, LANE_HALF_WIDTH);
         b.pos.y = clamp(b.pos.y, -LANE_HALF_WIDTH, LANE_HALF_WIDTH);
       }

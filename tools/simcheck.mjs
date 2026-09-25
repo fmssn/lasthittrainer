@@ -300,6 +300,51 @@ const results = await page.evaluate(async () => {
     check('siege creeps go for the tower first', siege.attackTargetId, tower.id);
   }
 
+  {
+    // Contact behaviour. A creep walking into a hero should be turned aside and
+    // go around, and the hero — being the heavier of the two — should be moved
+    // far less than the creep is.
+    const w = new World({ ...DEFAULT_CONFIG, heroId: 'juggernaut', seed: 31, enemyHero: false, duration: 1e9 });
+    const hero = w.player;
+    const creep = [...w.units.values()].find((u) => u.team === 'radiant' && u.kind === 'melee_creep');
+    w.units.clear();
+    w.units.set(hero.id, hero);
+    w.units.set(creep.id, creep);
+    creep.pos = { x: 2000, y: 0 };
+    creep.attackTargetId = null;
+    hero.pos = { x: 2000 + creep.radius + hero.radius - 4, y: 0 };
+    const heroFrom = { x: hero.pos.x, y: hero.pos.y };
+    let deflection = 0;
+    for (let i = 0; i < 2.5 * 120; i++) {
+      w.step(STEP);
+      deflection = Math.max(deflection, Math.abs(creep.pos.y));
+    }
+    const heroMoved = Math.hypot(hero.pos.x - heroFrom.x, hero.pos.y - heroFrom.y);
+    check('a blocked creep is turned aside rather than stalled', deflection > 10, true);
+    check('the creep still gets past', creep.pos.x > 2500, true);
+    // It walked 800 units through him; he should have given ground in tens.
+    check('a hero outweighs a creep in a shove', heroMoved < 80, true);
+  }
+
+  {
+    // Separation invariant: nothing should end a busy lane inside anything else.
+    const w = new World({ ...DEFAULT_CONFIG, seed: 44, duration: 1e9 });
+    settle(w, 60);
+    let worst = 0;
+    const alive = w.aliveUnits();
+    for (let i = 0; i < alive.length; i++) {
+      for (let j = i + 1; j < alive.length; j++) {
+        const a = alive[i];
+        const b = alive[j];
+        if (a.moveSpeed <= 0 && b.moveSpeed <= 0) continue;
+        const gap = a.radius + b.radius - Math.hypot(a.pos.x - b.pos.x, a.pos.y - b.pos.y);
+        worst = Math.max(worst, gap);
+      }
+    }
+    // One step of overlap can survive a frame; a body-length cannot.
+    check('units do not end up stacked', worst < 8, true);
+  }
+
   // --- Determinism: same seed, same lane ----------------------------------
   {
     const run = () => {

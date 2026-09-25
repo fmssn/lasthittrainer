@@ -40,6 +40,13 @@ export class EnemyHeroAi {
     this.harassCooldown -= dt;
     this.prune(world);
 
+    // A swing under way is a commitment. Without this the bot re-evaluates
+    // every tick, and its own move orders — approach() and hold() both issue
+    // one — cancel the wind-up they interrupt. It would lose last hits to its
+    // own indecision in a way no player ever does, and it would do it most
+    // often at exactly the moment a creep is about to drop.
+    if (this.hero.phase === 'windup') return;
+
     // Back off while creeps are actually chewing on it, not on a flat HP rule —
     // a bot that sits in the fountain waiting to heal is no sparring partner.
     const frac = this.hero.hp / this.hero.maxHp;
