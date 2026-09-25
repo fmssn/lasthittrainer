@@ -14,6 +14,7 @@ import {
 import { Annotations } from './annotations.ts';
 import { ProjectileLayer } from './projectileView.ts';
 import { Effects } from './effects.ts';
+import { SiegeView } from './siegeView.ts';
 import { isPlayerTarget } from './targetAids.ts';
 
 /**
@@ -81,8 +82,19 @@ function rayCylinder(ray: THREE.Ray, cx: number, cz: number, r: number, h: numbe
   return Math.max(enter, 0);
 }
 
+/**
+ * Every unit view answers the same four things, so the renderer does not care
+ * whether a unit is the shared skinned rig or the catapult's own geometry.
+ */
+interface UnitLike {
+  readonly root: THREE.Object3D;
+  sync(unit: Unit, dt: number): void;
+  dispose(): void;
+  readonly clip: string;
+}
+
 interface Rec {
-  view: UnitView;
+  view: UnitLike;
   /** Last seen sim state, kept so a unit removed mid-death still falls over. */
   last: Unit;
   /** Seconds since the unit vanished from the sim. */
@@ -269,15 +281,24 @@ export class Renderer3D {
 
     let rec = this.views.get(unit.id);
     if (!rec) {
-      const view = new UnitView(unit, this.asset, tintFor(unit));
-      view.root.scale.multiplyScalar(KIND_SCALE[unit.kind] ?? 1);
-      this.stage.scene.add(view.root);
-      rec = { view, last: unit, ghost: 0 };
+      rec = { view: this.makeView(unit), last: unit, ghost: 0 };
+      this.stage.scene.add(rec.view.root);
       this.views.set(unit.id, rec);
     }
     rec.last = unit;
     rec.ghost = 0;
     rec.view.sync(unit, dt);
+  }
+
+  /**
+   * The catapult is authored directly in sim units and has no skeleton, so it
+   * takes neither the shared rig nor its per-kind scale.
+   */
+  private makeView(unit: Unit): UnitLike {
+    if (unit.kind === 'siege_creep') return new SiegeView(unit);
+    const view = new UnitView(unit, this.asset, tintFor(unit));
+    view.root.scale.multiplyScalar(KIND_SCALE[unit.kind] ?? 1);
+    return view;
   }
 
   /** Units the sim has forgotten: hold the corpse long enough to read the fall. */

@@ -35,9 +35,15 @@ export const KIND_SCALE: Record<UnitKind, number> = {
 /** Height of the drawn tower body, mirroring the mesh the renderer builds. */
 export const TOWER_HEIGHT = 260;
 
+/** Top of the siege catapult's frame with its arm down, mirroring SiegeView. */
+export const SIEGE_HEIGHT = 150;
+/** Half the catapult's width across the axle. */
+export const SIEGE_RADIUS = 42;
+
 /** Top of a unit's drawn volume, in sim units above the lane. */
 export function rigHeight(unit: Unit): number {
   if (unit.kind === 'tower') return TOWER_HEIGHT;
+  if (unit.kind === 'siege_creep') return SIEGE_HEIGHT;
   return MODEL_HEIGHT * (KIND_SCALE[unit.kind] ?? 1);
 }
 
@@ -59,6 +65,7 @@ export function healthBarHeight(unit: Unit): number {
  */
 export function pickRadius(unit: Unit): number {
   if (unit.kind === 'tower') return TOWER_VISUAL_RADIUS;
+  if (unit.kind === 'siege_creep') return SIEGE_RADIUS;
   return Math.max(unit.radius, 24 * (KIND_SCALE[unit.kind] ?? 1));
 }
 
