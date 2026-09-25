@@ -1,4 +1,4 @@
-import type { FloatingText, KillEvent, Projectile, Team, Unit, Vec2 } from './types.ts';
+import type { FloaterKind, FloatingText, KillEvent, Projectile, Team, Unit, Vec2 } from './types.ts';
 import {
   AGGRO_COOLDOWN,
   AGGRO_DURATION,
@@ -26,6 +26,12 @@ export const RADIANT_SPAWN = 400;
 export const DIRE_SPAWN = 5600;
 export const LANE_CENTER = (RADIANT_SPAWN + DIRE_SPAWN) / 2;
 export const HERO_RESPAWN_TIME = 6;
+
+function floaterColor(kind: FloaterKind): string {
+  if (kind === 'player_damage') return '#ffd479';
+  if (kind === 'incoming_damage') return '#ff8b7a';
+  return '#b9c4cf';
+}
 export const RADIANT_TOWER_X = 1700;
 
 /**
@@ -587,7 +593,13 @@ export class World {
     if (!target.alive) return;
     if (target.kind === 'tower') return;
     target.hp -= dmg;
-    this.pushFloater(target.pos, `-${Math.round(dmg)}`, source.kind === 'hero' ? '#ffd479' : '#b9c4cf');
+    const kind: FloaterKind =
+      source.id === this.player.id
+        ? 'player_damage'
+        : target.id === this.player.id
+          ? 'incoming_damage'
+          : 'creep_damage';
+    this.pushFloater(target.pos, `-${Math.round(dmg)}`, floaterColor(kind), kind);
 
     // No retaliation hook here on purpose. Being hit is not what makes a creep
     // look at you in Dota — acquisition range and the forced-aggro check are,
@@ -617,7 +629,7 @@ export class World {
       if (byPlayer) {
         this.stats.lastHits++;
         this.stats.gold += gold;
-        this.pushFloater(victim.pos, `+${gold}`, '#f2c94c');
+        this.pushFloater(victim.pos, `+${gold}`, '#f2c94c', 'gold');
       } else if (byEnemy) {
         this.stats.enemyLastHits++;
       }
@@ -626,7 +638,7 @@ export class World {
     } else {
       if (byPlayer) {
         this.stats.denies++;
-        this.pushFloater(victim.pos, 'DENY', '#7fd6a2');
+        this.pushFloater(victim.pos, 'DENY', '#7fd6a2', 'deny');
       } else if (byEnemy) {
         this.stats.enemyDenies++;
       }
@@ -691,11 +703,15 @@ export class World {
 
   // --------------------------------------------------------------- floaters
 
-  pushFloater(pos: Vec2, text: string, color: string) {
+  pushFloater(pos: Vec2, text: string, color: string, kind: FloaterKind = 'creep_damage') {
     this.floaters.push({
-      pos: { x: pos.x + (this.rng() - 0.5) * 20, y: pos.y - 20 },
+      // Spread wider than a body: several creeps trading in a clump produce
+      // numbers on the same pixel otherwise, and two overlaid numbers read as
+      // one wrong one.
+      pos: { x: pos.x + (this.rng() - 0.5) * 60, y: pos.y - 20 + (this.rng() - 0.5) * 30 },
       text,
       color,
+      kind,
       age: 0,
       life: 0.9,
       rise: 46,

@@ -81,10 +81,18 @@ export interface Projectile {
   kind: 'creep' | 'hero';
 }
 
+/**
+ * What produced a floater. Dota shows no damage numbers for creeps hitting each
+ * other — the lane would be unreadable — so the renderer needs to be able to
+ * tell your own hits and the ones landing on you apart from wave noise.
+ */
+export type FloaterKind = 'player_damage' | 'incoming_damage' | 'creep_damage' | 'gold' | 'deny';
+
 export interface FloatingText {
   pos: Vec2;
   text: string;
   color: string;
+  kind: FloaterKind;
   age: number;
   life: number;
   rise: number;
