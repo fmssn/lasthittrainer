@@ -15,12 +15,26 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
  */
 const CAMERA_FOV = 20;
 
+/** Shared +Y axis, so place() is not allocating one every frame. */
+const UP = new THREE.Vector3(0, 1, 0);
+
 /**
  * Camera pitch above the horizon, in degrees. High enough to look down on the
  * lane and read creep spacing at a glance, shallow enough that the rigs are
  * still seen from the front rather than from the top of the head.
  */
 const CAMERA_PITCH = 57;
+
+/**
+ * Camera yaw around the lane, in degrees.
+ *
+ * The sim lays the lane out along +x, and looking straight down it puts the
+ * creeps on a dead-level line across the screen, which no MOBA ever looks
+ * like. Dota's bottom lane runs east along the south edge of a map whose
+ * camera faces north, and you read it on a slant. Yawing the camera gives the
+ * lane that slant without the sim ever knowing: it still thinks in x and y.
+ */
+const CAMERA_YAW = -18;
 
 export class Scene3D {
   readonly renderer: THREE.WebGLRenderer;
@@ -127,9 +141,9 @@ export class Scene3D {
 
   private place() {
     const pitch = THREE.MathUtils.degToRad(CAMERA_PITCH);
-    const offset = new THREE.Vector3(0, Math.sin(pitch), Math.cos(pitch)).multiplyScalar(
-      this.distance,
-    );
+    const offset = new THREE.Vector3(0, Math.sin(pitch), Math.cos(pitch))
+      .applyAxisAngle(UP, THREE.MathUtils.degToRad(CAMERA_YAW))
+      .multiplyScalar(this.distance);
     this.camera.position.copy(this.target).add(offset);
     this.camera.lookAt(this.target);
 
