@@ -4,7 +4,6 @@ import {
   AGGRO_DURATION,
   DENY_THRESHOLD,
   LANE_HALF_WIDTH,
-  LEASH_RANGE,
   MELEE_CREEP_HERO_DAMAGE_PENALTY,
   SIEGE_EVERY_N_WAVES,
   WAVE_INTERVAL,
@@ -590,12 +589,10 @@ export class World {
     target.hp -= dmg;
     this.pushFloater(target.pos, `-${Math.round(dmg)}`, source.kind === 'hero' ? '#ffd479' : '#b9c4cf');
 
-    // Creeps retaliate against enemy *creeps* that hit them. A hero attacking a
-    // creep draws no aggro in Dota — only an attack order on a hero does, which
-    // is handled by runAggroCheck.
-    if (target.kind !== 'hero' && source.kind !== 'hero' && target.team !== source.team && !target.aggroTargetId) {
-      if (!this.get(target.attackTargetId)) target.attackTargetId = source.id;
-    }
+    // No retaliation hook here on purpose. Being hit is not what makes a creep
+    // look at you in Dota — acquisition range and the forced-aggro check are,
+    // and creepAi runs both every tick. A "hit me, so I hit you" rule on top of
+    // that would have creeps turning on things their own AI never acquired.
 
     if (target.hp <= 0) this.kill(source, target);
   }
@@ -756,9 +753,5 @@ export class World {
       }
     }
     return best;
-  }
-
-  withinLeash(u: Unit, target: Unit): boolean {
-    return dist(u.pos, target.pos) <= LEASH_RANGE;
   }
 }

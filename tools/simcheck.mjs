@@ -219,6 +219,87 @@ const results = await page.evaluate(async () => {
     check('attack-move ignores allies', hero.attackTargetId, null);
   }
 
+  // --- Creep targeting and aggro ------------------------------------------
+  const settle = (w, seconds) => { for (let i = 0; i < seconds * 120; i++) w.step(STEP); };
+
+  {
+    // The rule the whole aggro layer rests on: creeps prefer other creeps, so a
+    // hero standing inside an engaged wave takes nothing.
+    const w = new World({ ...DEFAULT_CONFIG, seed: 11, enemyHero: false, duration: 1e9 });
+    settle(w, 4); // let the waves meet and pair off
+    const busy = [...w.units.values()].find(
+      (u) => u.team === 'dire' && u.kind === 'melee_creep' && u.attackTargetId,
+    );
+    const hero = w.player;
+    hero.pos = { x: busy.pos.x + 60, y: busy.pos.y };
+    hero.hp = hero.maxHp;
+    settle(w, 4);
+    check('creeps ignore a hero standing in the wave', hero.hp, hero.maxHp);
+  }
+
+  {
+    // ...and the exception: an attack order on their hero turns them onto you.
+    const w = new World({ ...DEFAULT_CONFIG, seed: 12, enemyHero: true, duration: 1e9 });
+    settle(w, 2);
+    const hero = w.player;
+    const enemy = w.enemy;
+    hero.pos = { x: enemy.pos.x - 200, y: enemy.pos.y };
+    w.orderAttack(hero, enemy);
+    const pulled = () =>
+      [...w.units.values()].filter((u) => u.team === 'dire' && u.aggroTargetId === hero.id);
+    check('attacking their hero pulls their creeps', pulled().length > 0, true);
+    check('the pull puts the puller on cooldown', hero.aggroCooldown > 0, true);
+
+    // Clicking one of your own units hands the wave straight back.
+    const mine = [...w.units.values()].find((u) => u.team === 'radiant' && u.kind !== 'hero');
+    w.orderAttack(hero, mine);
+    check('attacking your own unit gives aggro back', pulled().length, 0);
+  }
+
+  {
+    // Forced aggro lets go on its own after AGGRO_DURATION.
+    const w = new World({ ...DEFAULT_CONFIG, seed: 13, enemyHero: true, duration: 1e9 });
+    settle(w, 2);
+    const hero = w.player;
+    hero.pos = { x: w.enemy.pos.x - 200, y: w.enemy.pos.y };
+    w.orderAttack(hero, w.enemy);
+    const held = [...w.units.values()].filter((u) => u.aggroTargetId === hero.id).length;
+    check('pull actually took hold', held > 0, true);
+    settle(w, constants.AGGRO_DURATION + 0.2);
+    check('aggro expires', [...w.units.values()].filter((u) => u.aggroTargetId === hero.id).length, 0);
+  }
+
+  {
+    // Sticky targeting: a creep mid-fight does not swap to something nearer.
+    const w = new World({ ...DEFAULT_CONFIG, seed: 14, enemyHero: false, duration: 1e9 });
+    settle(w, 4);
+    const attacker = [...w.units.values()].find(
+      (u) => u.team === 'dire' && u.kind === 'melee_creep' && w.get(u.attackTargetId),
+    );
+    const held = attacker.attackTargetId;
+    // Drop a fresh, closer radiant creep right on top of it.
+    const bait = [...w.units.values()].find(
+      (u) => u.team === 'radiant' && u.kind === 'melee_creep' && u.id !== held,
+    );
+    bait.pos = { x: attacker.pos.x + 20, y: attacker.pos.y };
+    settle(w, 0.5);
+    check('creeps do not chase whatever is nearest', attacker.attackTargetId, held);
+  }
+
+  {
+    // Siege creeps are built for buildings and rank a tower above anything else.
+    const w = new World({ ...DEFAULT_CONFIG, seed: 15, enemyHero: false, duration: 1e9 });
+    const tower = [...w.units.values()].find((u) => u.kind === 'tower' && u.team === 'dire');
+    const siegeTpl = units.SIEGE_CREEP;
+    const { spawnUnit } = units;
+    const siege = spawnUnit(siegeTpl, 'radiant', { x: tower.pos.x - 400, y: tower.pos.y }, w.rng);
+    w.units.set(siege.id, siege);
+    const foe = spawnUnit(units.MELEE_CREEP, 'dire', { x: siege.pos.x + 80, y: siege.pos.y }, w.rng);
+    w.units.set(foe.id, foe);
+    settle(w, 0.2);
+    check('siege creeps go for the tower first', siege.attackTargetId, tower.id);
+  }
+
   // --- Determinism: same seed, same lane ----------------------------------
   {
     const run = () => {

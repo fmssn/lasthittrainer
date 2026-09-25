@@ -42,12 +42,6 @@ export function acquisitionRange(kind: UnitKind): number {
   return ACQUISITION_RANGE_BY_KIND[kind] ?? 500;
 }
 
-/**
- * Creeps leash to the target they are already hitting until it leaves this
- * radius — this is what makes a wave clump and hold equilibrium.
- */
-export const LEASH_RANGE = 700;
-
 /** How long forced (hero-triggered) creep aggro lasts. */
 export const AGGRO_DURATION = 2.3;
 
