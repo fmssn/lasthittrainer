@@ -31,10 +31,13 @@ const CAMERA_PITCH = 57;
  * The sim lays the lane out along +x, and looking straight down it puts the
  * creeps on a dead-level line across the screen, which no MOBA ever looks
  * like. Dota's bottom lane runs east along the south edge of a map whose
- * camera faces north, and you read it on a slant. Yawing the camera gives the
- * lane that slant without the sim ever knowing: it still thinks in x and y.
+ * camera faces north, with Radiant in the lower-left corner and Dire in the
+ * upper-right, so you read it on a slant with the enemy side up and to the
+ * right. Yawing the camera gives the lane that slant without the sim ever
+ * knowing: it still thinks in x and y. Negative is the direction that puts
+ * Dire up-right; positive sends the wave down-right, which is backwards.
  */
-const CAMERA_YAW = -18;
+const CAMERA_YAW = -28;
 
 export class Scene3D {
   readonly renderer: THREE.WebGLRenderer;
