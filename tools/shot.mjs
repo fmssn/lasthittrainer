@@ -56,6 +56,12 @@ await page.evaluate(() => {
 await page.waitForTimeout(seconds * 1000);
 await page.screenshot({ path: `${dir}/${label}-lane.png` });
 
-console.log(`wrote ${dir}/${label}-{menu,lane}.png`);
+// End the run to catch the results screen, which is otherwise only reachable
+// by waiting out the whole drill.
+await page.evaluate(() => window.__lht.finish());
+await page.waitForTimeout(400);
+await page.screenshot({ path: `${dir}/${label}-results.png` });
+
+console.log(`wrote ${dir}/${label}-{menu,lane,results}.png`);
 console.log('errors:', errors.length ? errors.slice(0, 5) : 'none');
 await browser.close();

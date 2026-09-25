@@ -52,6 +52,8 @@ interface HeroSource {
 
 export interface HeroTemplate extends UnitTemplate {
   id: string;
+  /** Always present on a hero: it is agility. Optional only on creep templates. */
+  attackSpeedBonus: number;
   /** How hard the attack animation is to time, 1 (forgiving) to 5 (brutal). */
   difficulty: 1 | 2 | 3 | 4 | 5;
   /** What this hero teaches. */

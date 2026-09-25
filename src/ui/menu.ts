@@ -1,6 +1,6 @@
 import { HEROES, heroById } from '../sim/heroes.ts';
 import { DEFAULT_CONFIG, type DrillConfig } from '../sim/config.ts';
-import { attackInterval } from '../sim/constants.ts';
+import { attackInterval, attackPointTime } from '../sim/constants.ts';
 import { loadRuns, type RunRecord } from '../stats.ts';
 
 const DURATIONS = [60, 120, 180, 300];
@@ -56,14 +56,18 @@ export class Menu {
           <h2>Hero</h2>
           <div class="hero-grid">
             ${HEROES.map((h) => {
-              const interval = attackInterval(h.baseAttackTime, 0).toFixed(2);
+              // Effective, not authored. Agility divides both the interval and
+              // the wind-up, so quoting the raw numbers off the hero file tells
+              // you a swing is slower than the one you are about to make.
+              const interval = attackInterval(h.baseAttackTime, h.attackSpeedBonus).toFixed(2);
+              const point = attackPointTime(h.attackPoint, h.attackSpeedBonus).toFixed(2);
               return `
               <button class="hero-card ${h.id === c.heroId ? 'selected' : ''}" data-hero="${h.id}">
                 <span class="hero-dot" style="background:${h.color}"></span>
                 <span class="hero-name">${h.name}</span>
                 <span class="hero-pips" title="timing difficulty">${pips(h.difficulty)}</span>
                 <span class="hero-stats">
-                  ${h.attackRange} range · ${h.attackPoint}s point · ${interval}s attack
+                  ${h.attackRange} range · ${point}s point · ${interval}s attack
                   ${h.projectileSpeed ? ` · ${h.projectileSpeed} proj` : ' · melee'}
                 </span>
                 <span class="hero-note">${h.note}</span>
