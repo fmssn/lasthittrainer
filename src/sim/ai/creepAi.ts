@@ -1,7 +1,7 @@
 import type { Unit } from '../types.ts';
 import type { World } from '../world.ts';
 import { DIRE_SPAWN, RADIANT_SPAWN } from '../world.ts';
-import { ACQUISITION_RANGE } from '../constants.ts';
+import { acquisitionRange } from '../constants.ts';
 import { dist } from '../math.ts';
 
 /**
@@ -42,8 +42,9 @@ export function runCreepAi(world: World, creep: Unit) {
  * why you can stand next to a wave all day and take no damage.
  */
 function pickTarget(world: World, creep: Unit): Unit | null {
-  // Towers reach further than creeps do; everything else uses acquisition range.
-  const range = creep.kind === 'tower' ? creep.attackRange : ACQUISITION_RANGE;
+  // One range per kind, straight from AttackAcquisitionRange: 500 melee, 600
+  // ranged, 800 siege, 700 tower.
+  const range = acquisitionRange(creep.kind);
   let bestCreep: Unit | null = null;
   let bestCreepD = range;
   let bestHero: Unit | null = null;

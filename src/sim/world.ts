@@ -1,17 +1,19 @@
 import type { FloatingText, KillEvent, Projectile, Team, Unit, Vec2 } from './types.ts';
 import {
-  ACQUISITION_RANGE,
   AGGRO_COOLDOWN,
   AGGRO_DURATION,
-  aggroTriggerRange,
   DENY_THRESHOLD,
   LANE_HALF_WIDTH,
   LEASH_RANGE,
+  MELEE_CREEP_HERO_DAMAGE_PENALTY,
   SIEGE_EVERY_N_WAVES,
   WAVE_INTERVAL,
+  acquisitionRange,
   armorMultiplier,
+  attackBackswingTime,
   attackInterval,
   attackPointTime,
+  turnSpeed,
 } from './constants.ts';
 import { MELEE_CREEP, RANGED_CREEP, SIEGE_CREEP, TOWER, resetIds, rollDamage, spawnUnit } from './units.ts';
 import { heroById } from './heroes.ts';
@@ -27,13 +29,6 @@ export const LANE_CENTER = (RADIANT_SPAWN + DIRE_SPAWN) / 2;
 export const HERO_RESPAWN_TIME = 6;
 export const RADIANT_TOWER_X = 1700;
 export const DIRE_TOWER_X = 4300;
-
-/**
- * Angular speed. Dota's per-frame turn formula is not published; this is
- * calibrated so a 180 degree turn at turn rate 0.6 takes about a quarter
- * second, which is what it feels like in game.
- */
-const TURN_SPEED_SCALE = 20;
 
 export interface Stats {
   lastHits: number;
@@ -124,10 +119,24 @@ export class World {
     return out;
   }
 
-  /** Average damage this unit deals to that target after armor. */
+  /** Average damage this unit deals to that target, after armor and modifiers. */
   expectedDamage(source: Unit, target: Unit): number {
     const avg = (source.damageMin + source.damageMax) / 2;
-    return avg * armorMultiplier(target.armor);
+    return this.applyModifiers(source, target, avg);
+  }
+
+  /**
+   * Armor, plus every flat multiplier that sits between a rolled attack and the
+   * health bar. Today that is just `creep_irresolute`: melee lane creeps deal
+   * 25% less to heroes. It lives in one place so the damage preview, the bot's
+   * estimate and the actual hit can never disagree.
+   */
+  private applyModifiers(source: Unit, target: Unit, raw: number): number {
+    let dmg = raw * armorMultiplier(target.armor);
+    if (source.kind === 'melee_creep' && target.kind === 'hero') {
+      dmg *= 1 - MELEE_CREEP_HERO_DAMAGE_PENALTY;
+    }
+    return dmg;
   }
 
   /** How long until a swing started now would land on `target`. */
@@ -292,7 +301,7 @@ export class World {
     for (const u of this.units.values()) {
       if (!u.alive || u.kind === 'hero') continue;
       if (u.team === attacker.team) continue;
-      const radius = u.kind === 'tower' ? u.attackRange : aggroTriggerRange(u.kind);
+      const radius = acquisitionRange(u.kind);
       if (dist(u.pos, attacker.pos) > radius) continue;
 
       if (pull) {
@@ -395,7 +404,7 @@ export class World {
 
   private turnToward(u: Unit, angle: number, dt: number) {
     const delta = angleDelta(u.facing, angle);
-    const max = u.turnRate * TURN_SPEED_SCALE * dt;
+    const max = turnSpeed(u.turnRate) * dt;
     u.facing += clamp(delta, -max, max);
   }
 
@@ -448,7 +457,7 @@ export class World {
       if (u.phaseTimer <= 0) {
         this.releaseAttack(u, target);
         u.phase = 'backswing';
-        u.phaseTimer = u.attackBackswing / (1 + u.attackSpeedBonus / 100);
+        u.phaseTimer = attackBackswingTime(u.attackBackswing, u.attackSpeedBonus);
       }
       return;
     }
@@ -475,7 +484,7 @@ export class World {
 
   private releaseAttack(source: Unit, target: Unit) {
     const raw = rollDamage(source, this.rng);
-    const dmg = raw * armorMultiplier(target.armor);
+    const dmg = this.applyModifiers(source, target, raw);
 
     if (source.projectileSpeed <= 0) {
       this.applyDamage(source, target, dmg);
@@ -679,7 +688,7 @@ export class World {
     return best;
   }
 
-  nearestEnemy(u: Unit, range = ACQUISITION_RANGE): Unit | null {
+  nearestEnemy(u: Unit, range = acquisitionRange(u.kind)): Unit | null {
     let best: Unit | null = null;
     let bestD = range;
     for (const o of this.units.values()) {

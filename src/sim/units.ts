@@ -1,5 +1,5 @@
 import type { Team, Unit, UnitKind, Vec2 } from './types.ts';
-import { DEFAULT_TURN_RATE } from './constants.ts';
+import { DEFAULT_TURN_RATE, HULL } from './constants.ts';
 
 let nextId = 1;
 export function resetIds() {
@@ -26,16 +26,24 @@ export interface UnitTemplate {
   bountyMin: number;
   bountyMax: number;
   xp: number;
+  /** Heroes carry attack speed from agility; creeps and towers have none. */
+  attackSpeedBonus?: number;
 }
 
 /**
- * Lane creeps, 7.3x base values (no per-minute HP/damage scaling — a training
- * drill is always "minute zero", which is also the hardest timing to learn).
+ * Lane creeps, straight out of Valve's `npc_units.txt` (no per-minute HP/damage
+ * scaling — a training drill is always "minute zero", which is also the hardest
+ * timing to learn).
+ *
+ * `attackBackswing` is the one number here that is not in the scripts: Dota
+ * takes it from the unit's attack animation rather than from data. These are
+ * community-measured values, and they only govern how long a unit is committed
+ * after the damage lands, so an error costs feel rather than last-hit maths.
  */
 export const MELEE_CREEP: UnitTemplate = {
   kind: 'melee_creep',
   name: 'Melee Creep',
-  radius: 24,
+  radius: HULL.regular,
   maxHp: 550,
   hpRegen: 0.5,
   armor: 2,
@@ -43,54 +51,56 @@ export const MELEE_CREEP: UnitTemplate = {
   damageMax: 23,
   attackRange: 100,
   baseAttackTime: 1.0,
-  attackPoint: 0.33,
+  attackPoint: 0.467,
   attackBackswing: 0.3,
   projectileSpeed: 0,
   moveSpeed: 325,
   turnRate: 0.5,
-  bountyMin: 36,
-  bountyMax: 46,
-  xp: 62,
+  bountyMin: 34,
+  bountyMax: 39,
+  xp: 57,
 };
 
 export const RANGED_CREEP: UnitTemplate = {
   kind: 'ranged_creep',
   name: 'Ranged Creep',
-  radius: 20,
+  radius: HULL.small,
   maxHp: 300,
-  hpRegen: 0.3,
-  armor: 1,
-  damageMin: 23,
-  damageMax: 27,
+  // Ranged creeps regen four times as fast as melee ones, which is why a
+  // harassed ranged creep is back to full before the next wave arrives.
+  hpRegen: 2,
+  armor: 0,
+  damageMin: 21,
+  damageMax: 26,
   attackRange: 500,
   baseAttackTime: 1.0,
-  attackPoint: 0.33,
+  attackPoint: 0.5,
   attackBackswing: 0.3,
   projectileSpeed: 900,
   moveSpeed: 325,
   turnRate: 0.5,
-  bountyMin: 41,
-  bountyMax: 51,
-  xp: 41,
+  bountyMin: 43,
+  bountyMax: 52,
+  xp: 69,
 };
 
 export const SIEGE_CREEP: UnitTemplate = {
   kind: 'siege_creep',
   name: 'Siege Creep',
-  radius: 28,
-  maxHp: 875,
+  radius: HULL.siege,
+  maxHp: 935,
   hpRegen: 0,
   armor: 0,
-  damageMin: 40,
-  damageMax: 52,
+  damageMin: 35,
+  damageMax: 46,
   attackRange: 690,
   baseAttackTime: 3.0,
-  attackPoint: 0.5,
+  attackPoint: 0.7,
   attackBackswing: 0.5,
   projectileSpeed: 1100,
   moveSpeed: 325,
   turnRate: 0.5,
-  bountyMin: 62,
+  bountyMin: 59,
   bountyMax: 72,
   xp: 88,
 };
@@ -103,15 +113,15 @@ export const SIEGE_CREEP: UnitTemplate = {
 export const TOWER: UnitTemplate = {
   kind: 'tower',
   name: 'Tower',
-  radius: 44,
+  radius: HULL.tower,
   maxHp: 1800,
   hpRegen: 0,
-  armor: 16,
-  damageMin: 104,
-  damageMax: 116,
+  armor: 12,
+  damageMin: 88,
+  damageMax: 92,
   attackRange: 700,
-  baseAttackTime: 1.0,
-  attackPoint: 0.3,
+  baseAttackTime: 0.9,
+  attackPoint: 0.6,
   attackBackswing: 0.3,
   projectileSpeed: 750,
   moveSpeed: 0,
@@ -147,7 +157,7 @@ export function spawnUnit(tpl: UnitTemplate, team: Team, pos: Vec2, rng: () => n
     attackPoint: tpl.attackPoint,
     attackBackswing: tpl.attackBackswing,
     projectileSpeed: tpl.projectileSpeed,
-    attackSpeedBonus: 0,
+    attackSpeedBonus: tpl.attackSpeedBonus ?? 0,
     bounty: Math.round(tpl.bountyMin + rng() * (tpl.bountyMax - tpl.bountyMin)),
     xp: tpl.xp,
     alive: true,
