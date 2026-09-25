@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { buildTerrain } from './terrain.ts';
 
 /**
  * Three.js stage shared by the in-game 3D renderer and the debug page.
@@ -92,31 +93,14 @@ export class Scene3D {
   }
 
   private sun: THREE.DirectionalLight;
+  private terrain!: ReturnType<typeof buildTerrain>;
 
   private buildGround() {
-    const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(20000, 8000),
-      new THREE.MeshStandardMaterial({ color: 0x2c3d2e, roughness: 1 }),
-    );
-    ground.rotation.x = -Math.PI / 2;
-    ground.receiveShadow = true;
-    this.scene.add(ground);
-
-    // The lane itself, so the eye has something to track along.
-    const lane = new THREE.Mesh(
-      new THREE.PlaneGeometry(20000, 620),
-      new THREE.MeshStandardMaterial({ color: 0x47573d, roughness: 1 }),
-    );
-    lane.rotation.x = -Math.PI / 2;
-    lane.position.y = 0.5;
-    lane.receiveShadow = true;
-    this.scene.add(lane);
-
-    const grid = new THREE.GridHelper(20000, 100, 0x2c3a33, 0x22302a);
-    grid.position.y = 1;
-    (grid.material as THREE.Material).transparent = true;
-    (grid.material as THREE.Material).opacity = 0.25;
-    this.scene.add(grid);
+    // The grid helper that used to sit here was invisible at this zoom and told
+    // you nothing when you could see it; terrain.ts gives the eye real things
+    // to measure distance against instead.
+    this.terrain = buildTerrain();
+    this.scene.add(this.terrain.group);
   }
 
   toggleOrbit(on: boolean) {
