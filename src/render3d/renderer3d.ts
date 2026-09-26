@@ -218,9 +218,9 @@ export class Renderer3D {
     return best ?? world.unitAt(this.toWorld(screen), forUnit);
   }
 
-  zoom(delta: number) {
-    // The 2D camera's positive delta means "closer"; the ortho frustum shrinks.
-    this.stage.zoom(-delta);
+  /** Zoom by mouse-wheel notches, positive out. */
+  zoom(notches: number) {
+    this.stage.zoom(notches);
   }
 
   draw(world: World, dt: number) {
