@@ -1,0 +1,132 @@
+{
+ "model": "stable_audio_3_medium.safetensors",
+ "text_encoder": "t5gemma_b_b_ul2.safetensors",
+ "sampler": {
+  "steps": 8,
+  "cfg": 1.0,
+  "sampler_name": "lcm",
+  "scheduler": "simple"
+ },
+ "files": {
+  "bow_draw_1.wav": {
+   "prompt": "TrackType: SFX, a wooden longbow drawn back, creaking wood and a tightening bowstring, rising tension, stopping at full draw with no release, dry close-miked studio recording, single isolated one-shot",
+   "seconds": 2.0,
+   "seed": 1000,
+   "batch_index": 29
+  },
+  "bow_release_1.wav": {
+   "prompt": "TrackType: SFX, a heavy longbow string released, deep thrumming twang with a sharp snap and an arrow whooshing away, full-bodied, dry close-miked studio recording, single isolated one-shot, sharp attack",
+   "seconds": 2.0,
+   "seed": 1000,
+   "batch_index": 28
+  },
+  "creep_death_1.wav": {
+   "prompt": "TrackType: SFX, a small skeleton collapsing to the ground, dry bones clattering and a light armor rattle, brief hollow rasp at the start, dry close-miked studio recording, single isolated one-shot",
+   "seconds": 2.0,
+   "seed": 1000,
+   "batch_index": 1
+  },
+  "deny_1.wav": {
+   "prompt": "TrackType: SFX, a short muted wooden knock with a dull dry click, soft and understated, low-mid body, quick decay, dry close-miked studio recording, single isolated one-shot, sharp attack",
+   "seconds": 2.0,
+   "seed": 1000,
+   "batch_index": 20
+  },
+  "frost_arrow_hit_1.wav": {
+   "prompt": "TrackType: SFX, an arrow thudding into a target, short wooden thunk with a small crackle of ice forming, crisp and cold, dry close-miked studio recording, single isolated one-shot, sharp attack",
+   "seconds": 2.0,
+   "seed": 1000,
+   "batch_index": 12
+  },
+  "hero_death_1.wav": {
+   "prompt": "TrackType: SFX, an armored warrior falling heavily to the ground, metal armor clattering and a low body thud, weapon dropping after, dry close-miked studio recording, single isolated one-shot",
+   "seconds": 2.0,
+   "seed": 1000,
+   "batch_index": 13
+  },
+  "horn_1.wav": {
+   "prompt": "TrackType: SFX, a single long note on a large war horn blown in the distance across an open valley, deep and brassy, natural outdoor echo, slow swell and fade",
+   "seconds": 5,
+   "seed": 1000,
+   "batch_index": 2
+  },
+  "lane_ambience_1.wav": {
+   "prompt": "TrackType: SFX, outdoor forest clearing ambience, gentle steady wind through trees, soft distant birdsong, rustling leaves, calm and even, no distinct events, field recording",
+   "seconds": 60,
+   "seed": 1000,
+   "batch_index": 7
+  },
+  "last_hit_gold_1.wav": {
+   "prompt": "TrackType: SFX, a few heavy gold coins dropped into an open palm, natural metallic clink with a warm low-mid body, real coins, dry close-miked studio recording, single isolated one-shot, sharp attack",
+   "seconds": 2.0,
+   "seed": 1000,
+   "batch_index": 3
+  },
+  "melee_creep_hit_1.wav": {
+   "prompt": "TrackType: SFX, a rusty short blade hacking into a wooden shield, dull clack with a small bony knock, short and light, dry close-miked studio recording, single isolated one-shot, sharp attack",
+   "seconds": 2.0,
+   "seed": 1000,
+   "batch_index": 14
+  },
+  "ranged_creep_cast_1.wav": {
+   "prompt": "TrackType: SFX, a small magic bolt fired from a wooden staff, soft whooshing fizz with a hollow puff, short and light, dry close-miked studio recording, single isolated one-shot, sharp attack",
+   "seconds": 2.0,
+   "seed": 1000,
+   "batch_index": 8
+  },
+  "ranged_creep_hit_1.wav": {
+   "prompt": "TrackType: SFX, a small magic bolt hitting a target, quick sizzling pop with a tiny crackle, short and light, dry close-miked studio recording, single isolated one-shot, sharp attack",
+   "seconds": 2.0,
+   "seed": 1000,
+   "batch_index": 3
+  },
+  "run_end_1.wav": {
+   "prompt": "TrackType: SFX, a single deep war drum hit with a low gong ringing out, solemn and warm, slow natural decay, dry close-miked studio recording",
+   "seconds": 5,
+   "seed": 1000,
+   "batch_index": 25
+  },
+  "siege_hit_1.wav": {
+   "prompt": "TrackType: SFX, a large boulder slamming into the ground and a wooden barricade, heavy low crunch with scattered debris, short tail, dry close-miked studio recording, single isolated one-shot, sharp attack",
+   "seconds": 2.0,
+   "seed": 1000,
+   "batch_index": 20
+  },
+  "siege_launch_1.wav": {
+   "prompt": "TrackType: SFX, a wooden catapult arm snapping forward and hitting its stop, deep wooden thump with a rope creak, heavy and short, dry close-miked studio recording, single isolated one-shot, sharp attack",
+   "seconds": 2.0,
+   "seed": 1000,
+   "batch_index": 13
+  },
+  "sword_hit_1.wav": {
+   "prompt": "TrackType: SFX, a heavy steel sword striking a bony armored target, sharp metallic chop with a crunchy low thud, short and punchy, dry close-miked studio recording, single isolated one-shot, sharp attack",
+   "seconds": 2.0,
+   "seed": 1000,
+   "batch_index": 10
+  },
+  "sword_swing_1.wav": {
+   "prompt": "TrackType: SFX, a heavy two-handed sword swung fast through the air, short airy whoosh with a faint metallic edge, rising then cut off, dry close-miked studio recording, single isolated one-shot, sharp attack",
+   "seconds": 2.0,
+   "seed": 1000,
+   "batch_index": 5
+  },
+  "tower_attack_1.wav": {
+   "prompt": "TrackType: SFX, an ancient stone tower firing a bolt of arcane energy, deep resonant magical launch with a low hum, short, dry close-miked studio recording, single isolated one-shot, sharp attack",
+   "seconds": 2.0,
+   "seed": 1000,
+   "batch_index": 11
+  },
+  "tower_hit_1.wav": {
+   "prompt": "TrackType: SFX, a heavy bolt of arcane energy striking a target, deep punchy magical impact with a short crackle, dry close-miked studio recording, single isolated one-shot, sharp attack",
+   "seconds": 2.0,
+   "seed": 1000,
+   "batch_index": 1
+  },
+  "ui_click_1.wav": {
+   "prompt": "TrackType: SFX, a soft wooden button click, small and muted, very short, dry close-miked studio recording, single isolated one-shot, sharp attack",
+   "seconds": 2.0,
+   "seed": 1000,
+   "batch_index": 8
+  }
+ }
+}

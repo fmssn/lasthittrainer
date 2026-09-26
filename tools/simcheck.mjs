@@ -237,6 +237,8 @@ const results = await page.evaluate(async () => {
     // a backswing — the follow-through never gates the next swing.
     const second = timeToDamage(w, creep);
     check('melee cadence is the attack interval', second, constants.attackInterval(hero.baseAttackTime, hero.attackSpeedBonus), 0.012);
+    // The audio tells your blow from the bot's by who swung, not by kind and team.
+    check('damage event names the melee swinger', w.damageLog.at(-1).sourceId, hero.id);
   }
 
   {
@@ -245,6 +247,7 @@ const results = await page.evaluate(async () => {
     w.orderAttack(hero, creep);
     const windup = constants.attackPointTime(hero.attackPoint, hero.attackSpeedBonus);
     check('ranged hit lands after travel', timeToDamage(w, creep), windup + 100 / hero.projectileSpeed, 0.02);
+    check('damage event names the archer, not the arrow', w.damageLog.at(-1).sourceId, hero.id);
   }
 
   {
@@ -462,7 +465,7 @@ const results = await page.evaluate(async () => {
     // shoulder. Sliding off one into the other used to leave a step pointing
     // straight back, taken at full stride and undone the next frame, over
     // and over, and the creep never got there.
-    const w = new World({ ...DEFAULT_CONFIG, seed: 31, enemyHero: false, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, seed: 31, enemyHero: false, waves: Infinity });
     w.units.clear();
     const put = (team, x, y, still) => {
       const u = units.spawnUnit(units.MELEE_CREEP, team, { x, y }, w.rng);
@@ -479,7 +482,7 @@ const results = await page.evaluate(async () => {
   }
 
   {
-    const w = new World({ ...DEFAULT_CONFIG, seed: 99, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, seed: 99, waves: Infinity });
     // Hundreds to thousands a minute before the fix.
     check('creeps in a busy lane do not shudder', reversals(w, 60) < 20, true);
   }
@@ -517,6 +520,48 @@ const results = await page.evaluate(async () => {
     check('the run ends the step the last creep dies', Math.abs(w.time - lastCreep) <= 1 / 120 + 1e-9, true);
   }
 
+  // --- Lane audio: which events become which sounds -----------------------
+  // The laning AI plays your side for three minutes against the bot, and a
+  // mixer that only counts stands in for Web Audio, so this checks the wiring
+  // and not the speakers. Nothing but a person checks the mix.
+  {
+    const { LaneAudio } = await import('/src/audio/laneAudio.ts');
+    const { EnemyHeroAi } = await import('/src/sim/ai/enemyHeroAi.ts');
+    const { ENEMY_PROFILES } = await import('/src/sim/config.ts');
+    const plays = {};
+    const offsets = [];
+    const mixer = {
+      play: (name, opts = {}) => {
+        plays[name] = (plays[name] ?? 0) + 1;
+        if (name === 'bow_draw') offsets.push(opts.offset ?? 0);
+        return { stop() {} };
+      },
+      duck() {},
+    };
+    const w = new World({ ...DEFAULT_CONFIG, heroId: 'frost_archer', enemyHero: true, enemyHeroId: 'swordmaster', seed: 21, waves: Infinity });
+    const audio = new LaneAudio(mixer, () => ({ x: 0, onScreen: true }));
+    audio.reset(w);
+    const me = new EnemyHeroAi(w.player, ENEMY_PROFILES[3]);
+    // Two sim steps to a drawn frame, as a 60 Hz display runs it.
+    for (let i = 0; i < 180 * 120; i++) {
+      if (w.player.alive) me.update(w, STEP);
+      w.step(STEP);
+      if (i % 2) audio.update(w);
+    }
+    check('lane audio: a coin for every last hit', plays.last_hit_gold ?? 0, w.stats.lastHits);
+    check('lane audio: a deny sound for every deny', plays.deny ?? 0, w.stats.denies);
+    check('lane audio: the drill had last hits to count', w.stats.lastHits > 0, true);
+    check('lane audio: creep hits play', (plays.melee_creep_hit ?? 0) > 0, true);
+    check('lane audio: ranged creeps cast', (plays.ranged_creep_cast ?? 0) > 0, true);
+    check('lane audio: the archer draws', (plays.bow_draw ?? 0) > 0, true);
+    check('lane audio: the archer releases', (plays.bow_release ?? 0) > 0, true);
+    check('lane audio: the bot swings', (plays.sword_swing ?? 0) > 0, true);
+    // The archer's windup is 0.403 s at level 1, so the draw starts 0.047 s
+    // in (plus up to a frame already gone when it is seen) and ends on the release.
+    const archerWindup = constants.attackPointTime(w.player.attackPoint, w.player.attackSpeedBonus);
+    check('lane audio: the draw is offset to end on the release', offsets.every((o) => o >= 0.45 - archerWindup - 1e-9 && o <= 0.45 - archerWindup + 2 * STEP + 1e-9), true);
+  }
+
   // --- Determinism: same seed, same lane ----------------------------------
   {
     const run = () => {
@@ -539,6 +584,16 @@ const results = await page.evaluate(async () => {
 // start() needs the renderer, which boot() builds only once every model has
 // loaded; the loading screen comes down at that point.
 await page.waitForFunction(() => !document.querySelector('.loading'), null, { timeout: 60000 });
+// The menu's backdrop lane is a real World, and it has been running behind the
+// menu all this time. It must not have made a sound.
+await page.waitForTimeout(1000);
+const menuPlays = await page.evaluate(() => window.__lht.audioStats());
+results.push({
+  name: 'the menu backdrop plays no lane sounds',
+  ok: Object.keys(menuPlays).every((n) => n === 'ui_click'),
+  actual: JSON.stringify(menuPlays),
+  expected: '{}',
+});
 await page.evaluate(() => {
   window.__lht.start({
     heroId: 'frost_archer',
@@ -549,9 +604,25 @@ await page.evaluate(() => {
     enemyDifficulty: 3,
     aggroEnabled: true,
     seed: 4242,
+    items: [],
   });
 });
 await page.waitForTimeout(2500);
+
+// And a real drill does make them: the seeded lane starts in combat.
+const drillPlays = await page.evaluate(() => window.__lht.audioStats());
+results.push({
+  name: 'a running drill plays creep hits',
+  ok: (drillPlays.melee_creep_hit ?? 0) > 0,
+  actual: JSON.stringify(drillPlays),
+  expected: 'melee_creep_hit > 0',
+});
+results.push({
+  name: 'a run opens with the horn and the ambience',
+  ok: drillPlays.horn === 1 && drillPlays.lane_ambience === 1,
+  actual: `horn ${drillPlays.horn}, ambience ${drillPlays.lane_ambience}`,
+  expected: 'horn 1, ambience 1',
+});
 
 const aim = await page.evaluate(() => {
   const w = window.__lht.world;
@@ -597,6 +668,12 @@ if (!aim) {
     expected: '{"target":null,"moving":true}',
   });
 }
+
+const endPlays = await page.evaluate(() => {
+  window.__lht.finish();
+  return window.__lht.audioStats();
+});
+results.push({ name: 'the results screen plays run_end', ok: endPlays.run_end === 1, actual: endPlays.run_end, expected: 1 });
 
 await browser.close();
 
