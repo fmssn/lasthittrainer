@@ -13,7 +13,6 @@
     "shot": "node tools/shot.mjs",
     "check": "node tools/simcheck.mjs",
     "balance": "node tools/balance.mjs",
-    "model": "node tools/blender/run.mjs",
     "pack": "node tools/pack-artifact.mjs"
   },
   "devDependencies": {

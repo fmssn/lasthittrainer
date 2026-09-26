@@ -4,7 +4,6 @@ import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js
 import type { Team, Unit } from '../sim/types.ts';
 import { attackPointTime } from '../sim/constants.ts';
 import { HEROES } from '../sim/heroes.ts';
-import { attachKit } from './weapons.ts';
 
 /**
  * One animated unit on the 3D stage.
@@ -12,28 +11,19 @@ import { attachKit } from './weapons.ts';
  * The clip choice is derived from sim state only — nothing here writes back
  * into the sim, and nothing in sim/ knows this file exists.
  *
- * Three kinds of file come through here.
+ * Two kinds of file come through here.
  * - The hero models (models/heroes/, built by hand in tools/blender/heroes.blend)
  *   wear their own gear, carry their hit time on the armature, and take the
  *   team colour on their `Team` material only.
  * - The KayKit skeletons (tools/blender/build_units.py) draw the melee and
  *   ranged creeps. They carry their own colours and weapons, and their hit time
  *   and stride in the file.
- * - The box rig (melee_creep.glb) is what is left for anything else. It is
- *   tinted per team and fitted with procedural kit, and its timing numbers are
- *   the constants below.
  */
 
-/** Blender scene fps the clips were authored at. */
-const CLIP_FPS = 24;
 /**
- * Frame in the Attack clip where the club actually connects. The clip starts on
- * frame 1, so the hit sits (10 - 1) / 24 seconds in. The runtime rescales the
- * clip so this instant lands exactly on the sim's damage tick.
+ * Sim units per metre for a hero model. The first rig, a 1.85 m box creep,
+ * read right at ~100 sim units, and the heroes were modelled to that scale.
  */
-const ATTACK_HIT_TIME = (10 - 1) / CLIP_FPS;
-
-/** Model is authored 1.85 units tall; sim creeps read right at ~100 units. */
 const MODEL_SCALE = 54;
 /** Head height of an unscaled rig, in sim units. Health bars anchor to it. */
 export const MODEL_HEIGHT = 1.85 * MODEL_SCALE;
@@ -42,7 +32,7 @@ export const MODEL_HEIGHT = 1.85 * MODEL_SCALE;
  * Height of a KayKit rig's head joint in sim units, which sets its scale. All
  * the skeletons share one rig with the head joint at the same height, so
  * scaling by it keeps a hat or helmet from changing how big the body is drawn.
- * 48 puts the melee creep's top at about 100, where the box creep stood.
+ * 48 puts the melee creep's top at about 100, level with MODEL_HEIGHT.
  */
 const KAYKIT_STATURE = 48;
 const STATURE_JOINT = 'head';
@@ -71,23 +61,20 @@ export interface CreepAsset {
   /** Seconds into Attack where the blow lands. */
   hitTime: number;
   /**
-   * File units per second the Walk clip covers at time scale 1. Null for the
-   * box rig, which keeps the cadence it was tuned at by eye.
+   * File units per second the Walk clip covers at time scale 1. Null for a
+   * hero, whose walk keeps a cadence tuned by eye.
    */
   groundSpeed: number | null;
-  /** The box rig: tinted per team and fitted with procedural kit. */
-  box: boolean;
   /**
    * A hero model: only its `Team` material takes the tint. Everything else on
    * it is authored colour, and tinting skin and steel with the team colour is
-   * what made the box rig read as a painted mannequin.
+   * what made the old box rig read as a painted mannequin.
    */
   teamTint: boolean;
 }
 
 /** The files the renderer draws with. Siege creeps and towers need none. */
 export interface UnitAssets {
-  box: CreepAsset;
   creeps: Record<'melee_creep' | 'ranged_creep', Record<Team, CreepAsset>>;
   /** By hero id. Every hero in HEROES has one. */
   heroes: Record<string, CreepAsset>;
@@ -130,23 +117,9 @@ function extra(clip: THREE.AnimationClip, key: string): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? v : null;
 }
 
-/** The box rig, the fallback for anything without a model of its own. */
-export async function loadCreep(url: string): Promise<CreepAsset> {
-  const gltf = await loadGltf(url);
-  return {
-    scene: gltf.scene,
-    clips: gltf.animations,
-    scale: MODEL_SCALE,
-    hitTime: ATTACK_HIT_TIME,
-    groundSpeed: null,
-    box: true,
-    teamTint: false,
-  };
-}
-
 /**
- * A hero model from tools/blender/heroes.blend. It is authored in metres like
- * the box rig, so it takes the same scale. Its contact (or release) time is a
+ * A hero model from tools/blender/heroes.blend, authored in metres, so it takes
+ * {@link MODEL_SCALE}. Its contact (or release) time is a
  * custom property on the armature, which the exporter writes as node extras,
  * so it travels with the file rather than living in a constant that the next
  * re-export silently invalidates. A file without one is refused, for the same
@@ -169,10 +142,9 @@ export async function loadHero(url: string): Promise<CreepAsset> {
     clips: gltf.animations,
     scale: MODEL_SCALE,
     hitTime,
-    // The walk was not authored against a measured stride, so it keeps the
-    // box rig's cadence rule.
+    // The walk was not authored against a measured stride, so it keeps a
+    // cadence rule tuned by eye.
     groundSpeed: null,
-    box: false,
     teamTint: true,
   };
 }
@@ -213,7 +185,6 @@ export async function loadKayKitCreep(url: string): Promise<CreepAsset> {
     scale: KAYKIT_STATURE / stature,
     hitTime,
     groundSpeed,
-    box: false,
     teamTint: false,
   };
 }
@@ -225,13 +196,11 @@ export async function loadKayKitCreep(url: string): Promise<CreepAsset> {
  */
 export async function loadUnitAssets(url: (path: string) => string): Promise<UnitAssets> {
   const creep = (kind: string, team: Team) => loadKayKitCreep(url(`models/units/${kind}_${team}.glb`));
-  // One model per hero in the roster. A missing one is as fatal as a creep:
-  // falling back to the box rig would put the wrong swing timing in front of
-  // the player.
+  // One model per hero in the roster, and a missing one is as fatal as a
+  // creep: there is nothing to fall back to that swings on the hero's timing.
   const heroIds = HEROES.map((h) => h.id);
-  const [[box, meleeR, meleeD, rangedR, rangedD], heroModels] = await Promise.all([
+  const [[meleeR, meleeD, rangedR, rangedD], heroModels] = await Promise.all([
     Promise.all([
-      loadCreep(url('models/melee_creep.glb')),
       creep('melee_creep', 'radiant'),
       creep('melee_creep', 'dire'),
       creep('ranged_creep', 'radiant'),
@@ -240,7 +209,6 @@ export async function loadUnitAssets(url: (path: string) => string): Promise<Uni
     Promise.all(heroIds.map((id) => loadHero(url(`models/heroes/${id}.glb`)))),
   ]);
   return {
-    box,
     creeps: {
       melee_creep: { radiant: meleeR, dire: meleeD },
       ranged_creep: { radiant: rangedR, dire: rangedD },
@@ -267,7 +235,7 @@ export class UnitView {
   private window = 0;
   private dead = false;
 
-  constructor(unit: Unit, asset: CreepAsset, tint?: number) {
+  constructor(asset: CreepAsset, tint?: number) {
     this.root = cloneSkinned(asset.scene) as THREE.Group;
     this.root.scale.setScalar(asset.scale);
     this.hitTime = asset.hitTime;
@@ -280,20 +248,12 @@ export class UnitView {
       // shadow of one would be a solid grey shape on the lane.
       o.castShadow = !mat.transparent;
       o.receiveShadow = true;
-      const tinted = asset.box || (asset.teamTint && mat.name === TEAM_MATERIAL);
-      if (tinted && tint !== undefined) {
+      if (asset.teamTint && mat.name === TEAM_MATERIAL && tint !== undefined) {
         // Clone so the two teams do not share one material instance.
         o.material = mat.clone();
         (o.material as THREE.MeshStandardMaterial).color.setHex(tint);
       }
     });
-
-    // Kit follows from sim state like everything else here: a unit that spawns
-    // projectiles shoots, one that hits instantly swings. Attached after the
-    // tint pass so steel, wood and cloth keep their own colours.
-    if (asset.box && !attachKit(this.root, unit.kind, unit.projectileSpeed)) {
-      throw new Error('creep rig is missing the bones the unit kit mounts on');
-    }
 
     this.mixer = new THREE.AnimationMixer(this.root);
     for (const clip of asset.clips) {
@@ -366,7 +326,7 @@ export class UnitView {
     // straight from backswing into the next windup restarts the clip instead of
     // finishing the previous swing's follow-through.
     if (unit.phase === 'windup' && this.prevPhase !== 'windup') {
-      // Rescale so the club connects on the sim's damage tick rather than
+      // Rescale so the blow lands on the sim's damage tick rather than
       // whenever the artist happened to put the contact frame. attackPointTime
       // is the same helper the sim uses, so attack speed is accounted for.
       const point = attackPointTime(unit.attackPoint, unit.attackSpeedBonus);
@@ -376,9 +336,8 @@ export class UnitView {
       // Cancelled or finished: 0.12s out is quick enough to read as an
       // interrupted swing without snapping.
       if (this.speed > WALK_EPSILON) {
-        // The box rig is deliberately not foot-locked: 325 units/s is several
-        // of its body-heights per second, and matching stride exactly would look
-        // like a sprint, so it scales, clamps and accepts the slide. A KayKit
+        // A hero is deliberately not foot-locked: its walk was never measured
+        // for stride, so it scales, clamps and accepts the slide. A KayKit
         // rig knows its own stride and runs (Running_A), so at 325 its feet stay
         // about planted: 1.86x for the melee creep, and the ranged one, drawn
         // at 0.88, just over the clamp. The scale includes that per-kind nudge.
