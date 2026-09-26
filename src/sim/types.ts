@@ -106,6 +106,8 @@ export interface DamageEvent {
   seq: number;
   pos: Vec2;
   targetId: number;
+  /** Who swung. Kind and team alone cannot tell your blow from the bot's. */
+  sourceId: number;
   sourceKind: UnitKind;
   sourceTeam: Team;
   /** True when the damage arrived as a projectile rather than a melee swing. */

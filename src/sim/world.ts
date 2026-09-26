@@ -705,6 +705,7 @@ export class World {
       seq: this.nextDamageSeq++,
       pos: { x: target.pos.x, y: target.pos.y },
       targetId: target.id,
+      sourceId: source.id,
       sourceKind: source.kind,
       sourceTeam: source.team,
       ranged,

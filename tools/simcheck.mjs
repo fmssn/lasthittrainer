@@ -237,6 +237,8 @@ const results = await page.evaluate(async () => {
     // a backswing — the follow-through never gates the next swing.
     const second = timeToDamage(w, creep);
     check('melee cadence is the attack interval', second, constants.attackInterval(hero.baseAttackTime, hero.attackSpeedBonus), 0.012);
+    // The audio tells your blow from the bot's by who swung, not by kind and team.
+    check('damage event names the melee swinger', w.damageLog.at(-1).sourceId, hero.id);
   }
 
   {
@@ -245,6 +247,7 @@ const results = await page.evaluate(async () => {
     w.orderAttack(hero, creep);
     const windup = constants.attackPointTime(hero.attackPoint, hero.attackSpeedBonus);
     check('ranged hit lands after travel', timeToDamage(w, creep), windup + 100 / hero.projectileSpeed, 0.02);
+    check('damage event names the archer, not the arrow', w.damageLog.at(-1).sourceId, hero.id);
   }
 
   {
