@@ -3,14 +3,14 @@
  *
  *   npm run pack   ->  dist-artifact/last-hit-trainer.html
  *
- * Everything is inlined — styles, the bundle, and every model as a base64
- * `data:` URL — for one reason: the page is meant to be published somewhere
- * with a strict content-security policy, where the only things it is allowed to
- * pull are scripts from a short CDN allowlist and stylesheets from Google
- * Fonts. A same-origin `fetch()` for the GLB, or a `<script src>` next to the
- * page, is exactly the kind of request such a policy drops silently. Inlining
- * sidesteps the whole question, and at ~4.5MB the page is nowhere near any
- * size limit worth worrying about.
+ * Everything is inlined — styles, the bundle, and every model and sound as a
+ * base64 `data:` URL — for one reason: the page is meant to be published
+ * somewhere with a strict content-security policy, where the only things it is
+ * allowed to pull are scripts from a short CDN allowlist and stylesheets from
+ * Google Fonts. A same-origin `fetch()` for the GLB, or a `<script src>` next
+ * to the page, is exactly the kind of request such a policy drops silently.
+ * Inlining sidesteps the whole question. The sounds take the page from ~4.5MB
+ * to ~11MB, still under the 16MB such hosts allow.
  *
  * The output is a fragment, not a document: no doctype, no <html>, no <head>.
  * Hosts that publish these wrap the file in their own skeleton, and a second
@@ -58,6 +58,11 @@ const glbs = ['units', 'heroes'].flatMap((dir) =>
 const models = Object.fromEntries(
   glbs.map((p) => [p, `data:model/gltf-binary;base64,${readFileSync(join('public', p)).toString('base64')}`]),
 );
+// The sounds ride the same map, keyed audio/<file>. The ambience loop is most
+// of their 5MB; the whole page stays well under what a host accepts.
+for (const f of readdirSync('public/audio').filter((f) => f.endsWith('.wav'))) {
+  models[`audio/${f}`] = `data:audio/wav;base64,${readFileSync(join('public/audio', f)).toString('base64')}`;
+}
 
 // A charset declaration, even though a publishing host's own skeleton will
 // carry one: the first meta in the document wins, so this is inert there and

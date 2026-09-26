@@ -7,18 +7,25 @@ import { Input } from './input.ts';
 import { Hud } from './ui/hud.ts';
 import { Menu } from './ui/menu.ts';
 import { Results } from './ui/results.ts';
+import { Mixer } from './audio/mixer.ts';
 
 /**
- * Where a model under public/ comes from.
+ * Where a file under public/ comes from.
  *
  * The single-file build (`npm run pack`) has nowhere to fetch a file from — the
  * whole app is one HTML document, and the strict CSP it is published under
- * blocks the request anyway — so it injects every GLB as a `data:` URL on this
- * global, keyed by its path under public/. The loaders already know to parse a
- * data: URL rather than fetch one, which is the only reason that path exists.
+ * blocks the request anyway — so it injects every GLB and sound as a `data:`
+ * URL on this global, keyed by its path under public/. The loaders already know
+ * to parse a data: URL rather than fetch one, which is the only reason that
+ * path exists.
  */
 const INLINED = (window as unknown as { __LHT_MODELS__?: Record<string, string> }).__LHT_MODELS__;
 const modelUrl = (path: string) => INLINED?.[path] ?? `${import.meta.env.BASE_URL}${path}`;
+
+// Sound is not a startup dependency: it loads beside the models and a file
+// that fails only leaves its sound silent.
+const mixer = new Mixer(modelUrl);
+void mixer.load();
 
 const SIM_STEP = 1 / 120;
 const MAX_CATCHUP = 0.25;
@@ -43,6 +50,18 @@ let world: World | null = null;
 let lastConfig: DrillConfig | null = null;
 let accumulator = 0;
 let lastFrame = performance.now();
+
+// Every button on the overlay clicks, menu, pause and results alike. A click is
+// also the user gesture browsers want before they let audio start at all.
+overlay.addEventListener(
+  'click',
+  (e) => {
+    if (!(e.target instanceof Element) || !e.target.closest('button')) return;
+    mixer.resume();
+    mixer.play('ui_click');
+  },
+  true,
+);
 
 const menu = new Menu(overlay, (config) => start(config));
 const results = new Results(
@@ -210,5 +229,7 @@ if (import.meta.env.DEV) {
     renderStats: () => renderer.stats(),
     /** Screen position of a sim point, so a harness can click on a unit. */
     toScreen: (p: { x: number; y: number }, up = 0) => renderer.toScreen(p, up),
+    /** Plays requested per sound, audible or not, for the audio checks in tools/. */
+    audioStats: () => ({ ...mixer.counts }),
   };
 }
