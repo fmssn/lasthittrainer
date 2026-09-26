@@ -34,8 +34,11 @@ body {
 
 #app {
   position: relative;
-  width: 100vw;
-  height: 100vh;
+  /* Not 100vw/100vh: when the page is hosted in a frame that pads the root for
+     a phone's safe-area insets, viewport units overflow it and the HUD ends up
+     under the system bars. */
+  width: 100%;
+  height: 100%;
 }
 
 #game {

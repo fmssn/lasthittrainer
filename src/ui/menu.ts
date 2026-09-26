@@ -18,8 +18,7 @@ export class Menu {
     root: HTMLElement,
     private onStart: (config: DrillConfig) => void,
   ) {
-    const saved = localStorage.getItem('lht.config');
-    this.config = { ...DEFAULT_CONFIG, ...(saved ? safeParse(saved) : {}) };
+    this.config = { ...DEFAULT_CONFIG, ...loadConfig() };
     this.el = document.createElement('div');
     this.el.className = 'screen menu';
     root.appendChild(this.el);
@@ -37,7 +36,7 @@ export class Menu {
 
   private set<K extends keyof DrillConfig>(key: K, value: DrillConfig[K]) {
     this.config[key] = value;
-    localStorage.setItem('lht.config', JSON.stringify(this.config));
+    saveConfig(this.config);
     this.render();
   }
 
@@ -200,10 +199,25 @@ function runRow(r: RunRecord): string {
   </div>`;
 }
 
-function safeParse(s: string): Partial<DrillConfig> {
+/**
+ * Reading localStorage does not merely return null when it is unavailable — in
+ * a private window, or with site data blocked, the accessor itself throws. The
+ * menu has to come up on defaults in that case rather than take the whole app
+ * down before the renderer is even built.
+ */
+function loadConfig(): Partial<DrillConfig> {
   try {
-    return JSON.parse(s) as Partial<DrillConfig>;
+    const saved = localStorage.getItem('lht.config');
+    return saved ? (JSON.parse(saved) as Partial<DrillConfig>) : {};
   } catch {
     return {};
+  }
+}
+
+function saveConfig(config: DrillConfig) {
+  try {
+    localStorage.setItem('lht.config', JSON.stringify(config));
+  } catch {
+    // Storage full or blocked. The setting still applies to this session.
   }
 }
