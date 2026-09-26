@@ -81,11 +81,12 @@ table is the opponent. It is a measurement, not a pass/fail, and it catches the
 one class of bug nothing else here can: a side bias. A lane where Radiant
 quietly farms better than Dire would flatter you for three minutes and teach
 you nothing, and staring at the code does not find it. Current reading, with
-the Frost Archer on both sides — level 3 against level 3 comes out 5.3 to
-10.3 last hits, gap 5.0, and the ladder runs 1.7 -> 5.0 -> 10.3 -> 12.7 ->
-15.0. That gap is open, not accepted: three seeds exaggerate it, but over
-twelve it is still 5.3 to 7.5 (Swordmaster mirror 4.1 to 5.5) with Dire ahead
-in most seeds, so the lane leans Dire. Before the roster was cut the harness
+the Frost Archer on both sides — level 3 against level 3 comes out 7.0 to
+9.0 last hits, gap 2.0, and the ladder runs 1.7 -> 5.0 -> 9.0 -> 12.7 ->
+14.0. That gap is open, not accepted: over seeds 1-12 it is 5.3 to 8.8, gap
+3.4, exactly what those seeds gave before creeps learned to walk round their
+own wave (an earlier twelve-seed Swordmaster mirror read 4.1 to 5.5), with
+Dire ahead in most seeds, so the lane leans Dire. Before the roster was cut the harness
 mirrored a hero no longer in it, which read 0.0 on the same seeds. Re-run it
 after touching creep AI, the bot, or anything in the combat path.
 
@@ -129,6 +130,7 @@ src/render3d/     The renderer: three.js stage + screen-space overlay
   effects.ts      Pooled impact sprites, driven by World.damageLog
   projectileView.ts  Oriented bolts with trails; flat travel, no arc
   renderer3d.ts   Renderer3D: scene + views + ground rings, and unit picking
+  outline.ts      The hover outline: a screen-space pass over the stage
   annotations.ts  Screen-space layer: health bars, aggro timer, floaters
 src/audio/        Lane sound, render-side like the effects
   sounds.ts       The manifest and the whole mix: file, group, level, voice cap
@@ -199,6 +201,14 @@ tools/audio/      generate.py, process.py and the record of every sound's take
   makes bodyblocking possible. Bodies meet at `bodyRadius(kind)`, which
   follows the drawn rigs and is wider than Valve's hulls; `Unit.radius` stays
   the hull, because attack range is measured to it.
+- A slide runs along a body but never back: a step deflected off two bodies
+  can point away from the goal, and taking it made a creep shudder in the
+  back of its own wave, forward into the pocket and out again every frame.
+  A unit walking into range heads for a free spot on the ring round its
+  target (`World.standSpot`), preferring one it can walk to in a line, and
+  keeps it in `Unit.chaseSpot` until a body takes it. Choosing afresh every
+  frame flip-flopped between spots in the same way. Both are covered by a
+  stride-reversal count in `npm run check`.
 
 ### Performance
 
@@ -225,7 +235,11 @@ exist.
 The drawing splits in two: ground-plane art (the selection ring, tower zones)
 is real geometry, while anything that must stay screen-sized and legible
 mid-swing (health bars, floaters) is drawn by `annotations.ts` on a 2D canvas
-over the stage.
+over the stage. The unit under the cursor is outlined by a screen-space pass
+(`outline.ts`): it is drawn flat into a mask and the pixels just outside it are
+lit, except where another unit stands in front. Every unit view is on
+`OCCLUDER_LAYER` for that depth test; the lane is not, or it would eat the
+bottom of every outline. There is no cursor ring on the ground.
 
 There are no training aids. A killable highlight, damage preview, deny line on
 the bars, an in-flight damage chunk, wind-up arc, range ring, a dashed line to

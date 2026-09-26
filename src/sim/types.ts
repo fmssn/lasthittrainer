@@ -52,6 +52,12 @@ export interface Unit {
   moveTarget: Vec2 | null;
   /** True when the order came from attack-move (A-click) rather than plain move. */
   attackMove: boolean;
+  /**
+   * The spot a unit walking into range has claimed, as an angle round its
+   * target. Kept while it stays free, so the unit walks to one place instead
+   * of changing its mind every time a body steps across the ring.
+   */
+  chaseSpot: { targetId: number; angle: number } | null;
 
   phase: AttackPhase;
   /** Seconds left in the current windup or backswing. */

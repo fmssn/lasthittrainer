@@ -199,7 +199,7 @@ const results = await page.evaluate(async () => {
   // Strip the lane down to one hero and one inert dummy so nothing else can
   // touch the creep's health, then measure when damage actually lands.
   const rig = (heroId) => {
-    const w = new World({ ...DEFAULT_CONFIG, heroId, seed: 5, enemyHero: false, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, heroId, seed: 5, enemyHero: false, waves: Infinity });
     const hero = w.player;
     const creep = [...w.units.values()].find((u) => u.team === 'dire' && u.kind === 'melee_creep');
     w.units.clear();
@@ -294,7 +294,7 @@ const results = await page.evaluate(async () => {
   {
     // The rule the whole aggro layer rests on: creeps prefer other creeps, so a
     // hero standing inside an engaged wave takes nothing.
-    const w = new World({ ...DEFAULT_CONFIG, seed: 11, enemyHero: false, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, seed: 11, enemyHero: false, waves: Infinity });
     settle(w, 4); // let the waves meet and pair off
     const busy = [...w.units.values()].find(
       (u) => u.team === 'dire' && u.kind === 'melee_creep' && u.attackTargetId,
@@ -308,7 +308,7 @@ const results = await page.evaluate(async () => {
 
   {
     // ...and the exception: an attack order on their hero turns them onto you.
-    const w = new World({ ...DEFAULT_CONFIG, seed: 12, enemyHero: true, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, seed: 12, enemyHero: true, waves: Infinity });
     settle(w, 2);
     const hero = w.player;
     const enemy = w.enemy;
@@ -327,7 +327,7 @@ const results = await page.evaluate(async () => {
 
   {
     // Forced aggro lets go on its own after AGGRO_DURATION.
-    const w = new World({ ...DEFAULT_CONFIG, seed: 13, enemyHero: true, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, seed: 13, enemyHero: true, waves: Infinity });
     settle(w, 2);
     const hero = w.player;
     hero.pos = { x: w.enemy.pos.x - 200, y: w.enemy.pos.y };
@@ -340,7 +340,7 @@ const results = await page.evaluate(async () => {
 
   {
     // Sticky targeting: a creep mid-fight does not swap to something nearer.
-    const w = new World({ ...DEFAULT_CONFIG, seed: 14, enemyHero: false, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, seed: 14, enemyHero: false, waves: Infinity });
     settle(w, 4);
     const attacker = [...w.units.values()].find(
       (u) => u.team === 'dire' && u.kind === 'melee_creep' && w.get(u.attackTargetId),
@@ -357,7 +357,7 @@ const results = await page.evaluate(async () => {
 
   {
     // Siege creeps are built for buildings and rank a tower above anything else.
-    const w = new World({ ...DEFAULT_CONFIG, seed: 15, enemyHero: false, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, seed: 15, enemyHero: false, waves: Infinity });
     const tower = [...w.units.values()].find((u) => u.kind === 'tower' && u.team === 'dire');
     const siegeTpl = units.SIEGE_CREEP;
     const { spawnUnit } = units;
@@ -372,7 +372,7 @@ const results = await page.evaluate(async () => {
   {
     // Contact behaviour. Nothing shoves anything in Dota: a creep walking into
     // a hero goes around him, and he does not give an inch.
-    const w = new World({ ...DEFAULT_CONFIG, heroId: 'swordmaster', seed: 31, enemyHero: false, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, heroId: 'swordmaster', seed: 31, enemyHero: false, waves: Infinity });
     const hero = w.player;
     const creep = [...w.units.values()].find((u) => u.team === 'radiant' && u.kind === 'melee_creep');
     w.units.clear();
@@ -400,7 +400,7 @@ const results = await page.evaluate(async () => {
   {
     // And the other way round: a hero ordered through a creep does not move it,
     // and a line of bodies across the lane stops him dead.
-    const w = new World({ ...DEFAULT_CONFIG, heroId: 'swordmaster', seed: 31, enemyHero: false, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, heroId: 'swordmaster', seed: 31, enemyHero: false, waves: Infinity });
     const hero = w.player;
     const all = [...w.units.values()];
     const mine = all.find((u) => u.team === 'radiant' && u.kind === 'melee_creep');
@@ -440,9 +440,56 @@ const results = await page.evaluate(async () => {
     check('a hero is bodyblocked by a line of creeps', hero.pos.x < 2200, true);
   }
 
+  // Stride reversals: steps that point back against the one before. A creep
+  // walking round something turns gradually and never reverses, so a count
+  // in the hundreds is one shuddering in place.
+  const reversals = (w, seconds, only) => {
+    const last = new Map();
+    let n = 0;
+    for (let i = 0; i < seconds * 120; i++) {
+      w.step(STEP);
+      for (const u of w.units.values()) {
+        if (!u.alive || u.kind === 'hero' || u.kind === 'tower' || (only && u !== only)) continue;
+        const p = last.get(u.id);
+        const m = p ? { x: u.pos.x - p.x, y: u.pos.y - p.y } : null;
+        const moved = m && Math.hypot(m.x, m.y) > 1e-6;
+        if (moved && p.m && m.x * p.m.x + m.y * p.m.y < 0) n++;
+        last.set(u.id, { x: u.pos.x, y: u.pos.y, m: moved ? m : p?.m });
+      }
+    }
+    return n;
+  };
+
+  {
+    // A creep whose straight way in is walled off by two friends shoulder to
+    // shoulder. Sliding off one into the other used to leave a step pointing
+    // straight back, taken at full stride and undone the next frame, over
+    // and over, and the creep never got there.
+    const w = new World({ ...DEFAULT_CONFIG, seed: 31, enemyHero: false, waves: Infinity });
+    w.units.clear();
+    const put = (team, x, y, still) => {
+      const u = units.spawnUnit(units.MELEE_CREEP, team, { x, y }, w.rng);
+      if (still) u.moveSpeed = 0;
+      w.units.set(u.id, u);
+      return u;
+    };
+    const foe = put('dire', 3000, 0, true);
+    put('radiant', 2904, 0, true);
+    put('radiant', 2904, 52, true);
+    const late = put('radiant', 2800, 20, false);
+    check('a creep behind its wave does not shudder', reversals(w, 1.5, late), 0);
+    check('it walks round its wave into range', w.inAttackRange(late, foe), true);
+  }
+
+  {
+    const w = new World({ ...DEFAULT_CONFIG, seed: 99, waves: Infinity });
+    // Hundreds to thousands a minute before the fix.
+    check('creeps in a busy lane do not shudder', reversals(w, 60) < 20, true);
+  }
+
   {
     // Separation invariant: nothing should end a busy lane inside anything else.
-    const w = new World({ ...DEFAULT_CONFIG, seed: 44, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, seed: 44, waves: Infinity });
     settle(w, 60);
     let worst = 0;
     const alive = w.aliveUnits();
@@ -457,6 +504,20 @@ const results = await page.evaluate(async () => {
     }
     // Only a freshly spawned clump may overlap, and only for a frame.
     check('units do not end up stacked', worst < 1, true);
+  }
+
+  // --- Drill length: a number of waves, farmed out --------------------------
+  {
+    const w = new World({ ...DEFAULT_CONFIG, seed: 21, enemyHero: false, waves: 2 });
+    let lastCreep = 0;
+    for (let i = 0; i < 120 * 300 && !w.finished; i++) {
+      w.step(1 / 120);
+      if ([...w.units.values()].some((u) => u.alive && u.kind !== 'hero' && u.kind !== 'tower')) lastCreep = w.time;
+    }
+    check('a two-wave drill ends', w.finished, true);
+    check('no third wave spawns', w.waveCount, 2);
+    // Not on the clock: the second wave is fought out before the run ends.
+    check('the run ends the step the last creep dies', Math.abs(w.time - lastCreep) <= 1 / 120 + 1e-9, true);
   }
 
   // --- Lane audio: which events become which sounds -----------------------
@@ -477,7 +538,7 @@ const results = await page.evaluate(async () => {
       },
       duck() {},
     };
-    const w = new World({ ...DEFAULT_CONFIG, heroId: 'frost_archer', enemyHero: true, enemyHeroId: 'swordmaster', seed: 21, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, heroId: 'frost_archer', enemyHero: true, enemyHeroId: 'swordmaster', seed: 21, waves: Infinity });
     const audio = new LaneAudio(mixer, () => ({ x: 0, onScreen: true }));
     audio.reset(w);
     const me = new EnemyHeroAi(w.player, ENEMY_PROFILES[3]);
@@ -504,7 +565,7 @@ const results = await page.evaluate(async () => {
   // --- Determinism: same seed, same lane ----------------------------------
   {
     const run = () => {
-      const w = new World({ ...DEFAULT_CONFIG, seed: 99, duration: 120 });
+      const w = new World({ ...DEFAULT_CONFIG, seed: 99, waves: 4 });
       for (let i = 0; i < 120 * 30; i++) w.step(1 / 120);
       return JSON.stringify(w.stats) + '|' + w.killLog.length;
     };
@@ -536,7 +597,7 @@ results.push({
 await page.evaluate(() => {
   window.__lht.start({
     heroId: 'frost_archer',
-    duration: 600,
+    waves: 20,
     deniesEnabled: true,
     enemyHero: false,
     enemyHeroId: 'swordmaster',

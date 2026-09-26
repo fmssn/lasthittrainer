@@ -48,7 +48,10 @@ const rows = await page.evaluate(
           heroId: 'frost_archer',
           enemyHeroId: 'frost_archer',
           enemyDifficulty: d,
-          duration: minutes * 60,
+          // Six waves on a three-minute cap is the window the recorded
+          // readings were taken over: the lane is cut off with the sixth
+          // wave still fighting, rather than farmed out to the end.
+          waves: minutes * 2,
           seed,
         });
         const me = new EnemyHeroAi(w.player, ENEMY_PROFILES[3]);
