@@ -199,7 +199,7 @@ const results = await page.evaluate(async () => {
   // Strip the lane down to one hero and one inert dummy so nothing else can
   // touch the creep's health, then measure when damage actually lands.
   const rig = (heroId) => {
-    const w = new World({ ...DEFAULT_CONFIG, heroId, seed: 5, enemyHero: false, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, heroId, seed: 5, enemyHero: false, waves: Infinity });
     const hero = w.player;
     const creep = [...w.units.values()].find((u) => u.team === 'dire' && u.kind === 'melee_creep');
     w.units.clear();
@@ -291,7 +291,7 @@ const results = await page.evaluate(async () => {
   {
     // The rule the whole aggro layer rests on: creeps prefer other creeps, so a
     // hero standing inside an engaged wave takes nothing.
-    const w = new World({ ...DEFAULT_CONFIG, seed: 11, enemyHero: false, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, seed: 11, enemyHero: false, waves: Infinity });
     settle(w, 4); // let the waves meet and pair off
     const busy = [...w.units.values()].find(
       (u) => u.team === 'dire' && u.kind === 'melee_creep' && u.attackTargetId,
@@ -305,7 +305,7 @@ const results = await page.evaluate(async () => {
 
   {
     // ...and the exception: an attack order on their hero turns them onto you.
-    const w = new World({ ...DEFAULT_CONFIG, seed: 12, enemyHero: true, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, seed: 12, enemyHero: true, waves: Infinity });
     settle(w, 2);
     const hero = w.player;
     const enemy = w.enemy;
@@ -324,7 +324,7 @@ const results = await page.evaluate(async () => {
 
   {
     // Forced aggro lets go on its own after AGGRO_DURATION.
-    const w = new World({ ...DEFAULT_CONFIG, seed: 13, enemyHero: true, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, seed: 13, enemyHero: true, waves: Infinity });
     settle(w, 2);
     const hero = w.player;
     hero.pos = { x: w.enemy.pos.x - 200, y: w.enemy.pos.y };
@@ -337,7 +337,7 @@ const results = await page.evaluate(async () => {
 
   {
     // Sticky targeting: a creep mid-fight does not swap to something nearer.
-    const w = new World({ ...DEFAULT_CONFIG, seed: 14, enemyHero: false, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, seed: 14, enemyHero: false, waves: Infinity });
     settle(w, 4);
     const attacker = [...w.units.values()].find(
       (u) => u.team === 'dire' && u.kind === 'melee_creep' && w.get(u.attackTargetId),
@@ -354,7 +354,7 @@ const results = await page.evaluate(async () => {
 
   {
     // Siege creeps are built for buildings and rank a tower above anything else.
-    const w = new World({ ...DEFAULT_CONFIG, seed: 15, enemyHero: false, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, seed: 15, enemyHero: false, waves: Infinity });
     const tower = [...w.units.values()].find((u) => u.kind === 'tower' && u.team === 'dire');
     const siegeTpl = units.SIEGE_CREEP;
     const { spawnUnit } = units;
@@ -369,7 +369,7 @@ const results = await page.evaluate(async () => {
   {
     // Contact behaviour. Nothing shoves anything in Dota: a creep walking into
     // a hero goes around him, and he does not give an inch.
-    const w = new World({ ...DEFAULT_CONFIG, heroId: 'swordmaster', seed: 31, enemyHero: false, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, heroId: 'swordmaster', seed: 31, enemyHero: false, waves: Infinity });
     const hero = w.player;
     const creep = [...w.units.values()].find((u) => u.team === 'radiant' && u.kind === 'melee_creep');
     w.units.clear();
@@ -397,7 +397,7 @@ const results = await page.evaluate(async () => {
   {
     // And the other way round: a hero ordered through a creep does not move it,
     // and a line of bodies across the lane stops him dead.
-    const w = new World({ ...DEFAULT_CONFIG, heroId: 'swordmaster', seed: 31, enemyHero: false, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, heroId: 'swordmaster', seed: 31, enemyHero: false, waves: Infinity });
     const hero = w.player;
     const all = [...w.units.values()];
     const mine = all.find((u) => u.team === 'radiant' && u.kind === 'melee_creep');
@@ -486,7 +486,7 @@ const results = await page.evaluate(async () => {
 
   {
     // Separation invariant: nothing should end a busy lane inside anything else.
-    const w = new World({ ...DEFAULT_CONFIG, seed: 44, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, seed: 44, waves: Infinity });
     settle(w, 60);
     let worst = 0;
     const alive = w.aliveUnits();
@@ -503,10 +503,24 @@ const results = await page.evaluate(async () => {
     check('units do not end up stacked', worst < 1, true);
   }
 
+  // --- Drill length: a number of waves, farmed out --------------------------
+  {
+    const w = new World({ ...DEFAULT_CONFIG, seed: 21, enemyHero: false, waves: 2 });
+    let lastCreep = 0;
+    for (let i = 0; i < 120 * 300 && !w.finished; i++) {
+      w.step(1 / 120);
+      if ([...w.units.values()].some((u) => u.alive && u.kind !== 'hero' && u.kind !== 'tower')) lastCreep = w.time;
+    }
+    check('a two-wave drill ends', w.finished, true);
+    check('no third wave spawns', w.waveCount, 2);
+    // Not on the clock: the second wave is fought out before the run ends.
+    check('the run ends the step the last creep dies', Math.abs(w.time - lastCreep) <= 1 / 120 + 1e-9, true);
+  }
+
   // --- Determinism: same seed, same lane ----------------------------------
   {
     const run = () => {
-      const w = new World({ ...DEFAULT_CONFIG, seed: 99, duration: 120 });
+      const w = new World({ ...DEFAULT_CONFIG, seed: 99, waves: 4 });
       for (let i = 0; i < 120 * 30; i++) w.step(1 / 120);
       return JSON.stringify(w.stats) + '|' + w.killLog.length;
     };
@@ -528,7 +542,7 @@ await page.waitForFunction(() => !document.querySelector('.loading'), null, { ti
 await page.evaluate(() => {
   window.__lht.start({
     heroId: 'frost_archer',
-    duration: 600,
+    waves: 20,
     deniesEnabled: true,
     enemyHero: false,
     enemyHeroId: 'swordmaster',

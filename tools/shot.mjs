@@ -41,7 +41,7 @@ await page.evaluate(() => {
     heroId: 'frost_archer',
     // A real opening buy, so the HUD inventory and the results strip are in frame.
     items: ['tango', 'tango', 'quelling_blade', 'iron_branch', 'iron_branch', 'magic_stick'],
-    duration: 600,
+    waves: 20,
     deniesEnabled: true,
     enemyHero: true,
     enemyHeroId: 'swordmaster',
