@@ -13,14 +13,22 @@ import { attachKit } from './weapons.ts';
  * GLB for a real asset means matching four clip names, nothing more.
  */
 
-/** Blender scene fps the clips were authored at. */
+/** Blender scene fps the creep clips were authored at. */
 const CLIP_FPS = 24;
 /**
- * Frame in the Attack clip where the club actually connects. The clip starts on
- * frame 1, so the hit sits (10 - 1) / 24 seconds in. The runtime rescales the
- * clip so this instant lands exactly on the sim's damage tick.
+ * Frame in the creep's Attack clip where the club actually connects. The clip
+ * starts on frame 1, so the hit sits (10 - 1) / 24 seconds in. The runtime
+ * rescales the clip so this instant lands exactly on the sim's damage tick.
+ * A hero model carries its own number instead; see {@link RigAsset.hitTime}.
  */
-const ATTACK_HIT_TIME = (10 - 1) / CLIP_FPS;
+const CREEP_HIT_TIME = (10 - 1) / CLIP_FPS;
+
+/**
+ * The one material a hero model lets the runtime recolour. Everything else on
+ * a hero is authored colour, and tinting skin and steel with the team colour
+ * is what made the creep read as a painted mannequin.
+ */
+const TEAM_MATERIAL = 'Team';
 
 /** Model is authored 1.85 units tall; sim creeps read right at ~100 units. */
 const MODEL_SCALE = 54;
@@ -43,9 +51,16 @@ const SPEED_WINDOW = 0.1;
 
 export type ClipName = 'Idle' | 'Walk' | 'Attack' | 'Death';
 
-export interface CreepAsset {
+export interface RigAsset {
   scene: THREE.Group;
   clips: THREE.AnimationClip[];
+  /** Seconds into the unscaled Attack clip where the blow connects. */
+  hitTime: number;
+  /**
+   * True for a model built for one hero: it wears its own weapon and gear, so
+   * no procedural kit goes on, and only its Team material takes the tint.
+   */
+  bespoke: boolean;
 }
 
 /** Base64 payload of a `data:` URL, as bytes. */
@@ -54,7 +69,13 @@ function decodeDataUrl(url: string): ArrayBuffer {
   return bytes.buffer;
 }
 
-export async function loadCreep(url: string): Promise<CreepAsset> {
+/**
+ * Load a rig. A hero model says so by carrying `hitTime` as custom properties
+ * on its armature (glTF extras, which the loader puts on `userData`), so the
+ * contact frame travels with the file rather than living in a constant here
+ * that the next re-export silently invalidates.
+ */
+export async function loadRig(url: string): Promise<RigAsset> {
   const loader = new GLTFLoader();
   // A data: URL is decoded here and handed to parse() rather than loadAsync(),
   // which would fetch() it — and fetch() on a data: URL is a connect-src request,
@@ -69,7 +90,16 @@ export async function loadCreep(url: string): Promise<CreepAsset> {
     // and it is much cheaper to catch here than to debug as "the creep T-poses".
     throw new Error(`${url} is missing clips: ${missing.join(', ')}`);
   }
-  return { scene: gltf.scene, clips: gltf.animations };
+  let hitTime: number | undefined;
+  gltf.scene.traverse((o) => {
+    if (typeof o.userData.hitTime === 'number') hitTime = o.userData.hitTime;
+  });
+  return {
+    scene: gltf.scene,
+    clips: gltf.animations,
+    hitTime: hitTime ?? CREEP_HIT_TIME,
+    bespoke: hitTime !== undefined,
+  };
 }
 
 export class UnitView {
@@ -87,26 +117,32 @@ export class UnitView {
   private travelled = 0;
   private window = 0;
   private dead = false;
+  private readonly hitTime: number;
 
-  constructor(unit: Unit, asset: CreepAsset, tint?: number) {
+  constructor(unit: Unit, asset: RigAsset, tint?: number) {
     this.root = cloneSkinned(asset.scene) as THREE.Group;
     this.root.scale.setScalar(MODEL_SCALE);
+    this.hitTime = asset.hitTime;
 
     this.root.traverse((o) => {
       if (!(o instanceof THREE.Mesh)) return;
-      o.castShadow = true;
+      const mat = o.material as THREE.MeshStandardMaterial;
+      // The sword trail is a translucent sheet; a shadow of it would be a
+      // solid grey blade on the lane.
+      o.castShadow = !mat.transparent;
       o.receiveShadow = true;
-      if (tint !== undefined) {
+      if (tint !== undefined && (!asset.bespoke || mat.name === TEAM_MATERIAL)) {
         // Clone so the two teams do not share one material instance.
-        o.material = (o.material as THREE.MeshStandardMaterial).clone();
+        o.material = mat.clone();
         (o.material as THREE.MeshStandardMaterial).color.setHex(tint);
       }
     });
 
     // Kit follows from sim state like everything else here: a unit that spawns
     // projectiles shoots, one that hits instantly swings. Attached after the
-    // tint pass so steel, wood and cloth keep their own colours.
-    if (!attachKit(this.root, unit.kind, unit.projectileSpeed)) {
+    // tint pass so steel, wood and cloth keep their own colours. A hero model
+    // is already dressed.
+    if (!asset.bespoke && !attachKit(this.root, unit.kind, unit.projectileSpeed)) {
       throw new Error('creep rig is missing the bones the unit kit mounts on');
     }
 
@@ -185,7 +221,7 @@ export class UnitView {
       // whenever the artist happened to put the contact frame. attackPointTime
       // is the same helper the sim uses, so attack speed is accounted for.
       const point = attackPointTime(unit.attackPoint, unit.attackSpeedBonus);
-      const scale = ATTACK_HIT_TIME / Math.max(point, 0.01);
+      const scale = this.hitTime / Math.max(point, 0.01);
       this.play('Attack', 0.06, scale);
     } else if (!swinging) {
       // Cancelled or finished: 0.12s out is quick enough to read as an

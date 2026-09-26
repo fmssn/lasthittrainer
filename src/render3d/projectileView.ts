@@ -24,6 +24,12 @@ import type { Effects } from './effects.ts';
 
 /** Launch height in sim units — roughly a creep's shoulder. */
 const SHOULDER = 78;
+/**
+ * A hero's shot leaves from the bow at full draw: the Frost Archer's grip sits
+ * 1.47 m up in the model, which is ~115 units once scaled. From the creep's
+ * shoulder the arrow would appear out of her ribs, under the release flash.
+ */
+const HERO_LAUNCH = 112;
 /** Impact height: the middle of a body, not its feet. */
 const CHEST = 70;
 
@@ -56,6 +62,8 @@ interface Tracked {
   targetId: number;
   /** Seconds since the last trail dot, so the trail is time-based not frame-based. */
   sinceTrail: number;
+  /** Height the bolt leaves from. */
+  launch: number;
 }
 
 const UP = new THREE.Vector3(0, 1, 0);
@@ -107,12 +115,13 @@ export class ProjectileLayer {
           last: new THREE.Vector3(),
           targetId: p.targetId,
           sinceTrail: 0,
+          launch: p.kind === 'hero' ? HERO_LAUNCH : SHOULDER,
         };
         this.tracked.set(p.id, t);
       }
 
       const progress = THREE.MathUtils.clamp(1 - dist / t.startDist, 0, 1);
-      const y = SHOULDER + (CHEST - SHOULDER) * progress;
+      const y = t.launch + (CHEST - t.launch) * progress;
       t.mesh.position.set(p.pos.x, y, p.pos.y);
       t.last.copy(t.mesh.position);
 

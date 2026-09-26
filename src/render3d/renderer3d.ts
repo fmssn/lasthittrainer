@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import type { Unit, Vec2 } from '../sim/types.ts';
 import type { World } from '../sim/world.ts';
 import { Scene3D } from './scene.ts';
-import { UnitView, type CreepAsset } from './unitView.ts';
+import { UnitView, type RigAsset } from './unitView.ts';
+import { HEROES } from '../sim/heroes.ts';
 import {
   KIND_SCALE,
   KIND_SHIFT,
@@ -136,7 +137,9 @@ export class Renderer3D {
   constructor(
     container: HTMLElement,
     before: HTMLElement,
-    private readonly asset: CreepAsset,
+    private readonly asset: RigAsset,
+    /** Hero models by hero id. A hero without one wears the creep rig and kit. */
+    private readonly heroAssets: Readonly<Record<string, RigAsset>> = {},
   ) {
     this.canvas = document.createElement('canvas');
     this.canvas.className = 'stage3d';
@@ -297,9 +300,19 @@ export class Renderer3D {
    */
   private makeView(unit: Unit): UnitLike {
     if (unit.kind === 'siege_creep') return new SiegeView(unit);
-    const view = new UnitView(unit, this.asset, tintFor(unit));
+    const view = new UnitView(unit, this.assetFor(unit), tintFor(unit));
     view.root.scale.multiplyScalar(KIND_SCALE[unit.kind] ?? 1);
     return view;
+  }
+
+  /**
+   * A unit carries its hero's display name but not its id, and the sim has no
+   * reason to grow a render-only field, so the id is looked up by name.
+   */
+  private assetFor(unit: Unit): RigAsset {
+    if (unit.kind !== 'hero') return this.asset;
+    const id = HEROES.find((h) => h.name === unit.name)?.id;
+    return (id && this.heroAssets[id]) || this.asset;
   }
 
   /** Units the sim has forgotten: hold the corpse long enough to read the fall. */

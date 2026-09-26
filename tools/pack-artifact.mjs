@@ -3,13 +3,13 @@
  *
  *   npm run pack   ->  dist-artifact/last-hit-trainer.html
  *
- * Everything is inlined — styles, the bundle, and the creep rig as a base64
- * `data:` URL — for one reason: the page is meant to be published somewhere
+ * Everything is inlined — styles, the bundle, and the creep and hero rigs as
+ * base64 `data:` URLs — for one reason: the page is meant to be published somewhere
  * with a strict content-security policy, where the only things it is allowed to
  * pull are scripts from a short CDN allowlist and stylesheets from Google
  * Fonts. A same-origin `fetch()` for the GLB, or a `<script src>` next to the
  * page, is exactly the kind of request such a policy drops silently. Inlining
- * sidesteps the whole question, and at ~800KB the page is nowhere near any
+ * sidesteps the whole question, and at ~2.7MB the page is nowhere near any
  * size limit worth worrying about.
  *
  * The output is a fragment, not a document: no doctype, no <html>, no <head>.
@@ -49,6 +49,13 @@ const escapeClose = (code, tag) => code.split(`</${tag}`).join(`<\\/${tag}`);
 const js = escapeClose(readFileSync(join('dist/assets', scripts[0]), 'utf8'), 'script');
 const css = escapeClose(readFileSync(join('dist/assets', styles[0]), 'utf8'), 'style');
 const glb = readFileSync('public/models/melee_creep.glb').toString('base64');
+// Keep in step with HERO_MODEL_URLS in main.ts.
+const heroes = Object.fromEntries(
+  ['swordmaster', 'frost_archer'].map((id) => [
+    id,
+    `data:model/gltf-binary;base64,${readFileSync(`public/models/${id}.glb`).toString('base64')}`,
+  ]),
+);
 
 // A charset declaration, even though a publishing host's own skeleton will
 // carry one: the first meta in the document wins, so this is inert there and
@@ -82,6 +89,7 @@ ${css}
   // The creep rig, inlined. main.ts reads this and hands it to a glTF parser
   // rather than fetching it.
   window.__LHT_MODEL__ = 'data:model/gltf-binary;base64,${glb}';
+  window.__LHT_HEROES__ = ${JSON.stringify(heroes)};
 </script>
 <script type="module">
 ${js}
