@@ -53,7 +53,7 @@ Every unit and hero number comes from Valve's own `npc_units.txt` and
 `scripts/npc/heroes/*.txt`, not from memory or from a wiki summary. `npm run
 check` asserts the whole table, so they cannot drift.
 
-- Creeps use 7.3x base stats with no per-minute scaling — a drill is always minute zero, which is also the hardest timing to learn. Siege creeps come every 10th wave from 5:00, as in Dota, so no drill here is long enough to see one.
+- Creeps use 7.3x base stats with no per-minute scaling — a drill is always minute zero, which is also the hardest timing to learn. Siege creeps come every 10th wave from 5:00, as in Dota: the 11th wave, one more than the longest drill here.
 - Armor uses the real formula, `1 - 0.06a / (1 + 0.06|a|)`.
 - Attack point and attack interval both scale with attack speed, and heroes carry attack speed from agility on top of their `BaseAttackSpeed`. The Swordmaster's is 110 rather than 100, so its authored 0.33s attack point is really 0.23s in lane.
 - Attack points are the real ones: 0.467s for a melee creep, 0.5s for a ranged one, 0.7s for siege. The wind-up roots you; the backswing is cancellable and never delays your next swing.

@@ -169,6 +169,7 @@ export function spawnUnit(tpl: UnitTemplate, team: Team, pos: Vec2, rng: () => n
     attackTargetId: null,
     moveTarget: null,
     attackMove: false,
+    chaseSpot: null,
     phase: 'idle',
     phaseTimer: 0,
     attackCooldown: 0,

@@ -23,14 +23,14 @@ export class Results {
     this.el.hidden = true;
   }
 
-  show(config: DrillConfig, stats: Stats) {
-    const record = buildRecord(config, stats);
+  show(config: DrillConfig, stats: Stats, duration: number) {
+    const record = buildRecord(config, stats, duration);
     const before = loadRuns();
     const best = personalBest(before, record);
     saveRun(record);
 
     const hero = heroById(config.heroId);
-    const perMin = (stats.lastHits / config.duration) * 60;
+    const perMin = (stats.lastHits / Math.max(1, duration)) * 60;
     const improved = best ? record.lastHits - best.lastHits : null;
 
     this.el.innerHTML = `
@@ -58,7 +58,7 @@ export class Results {
               ? card('Deny rate', `${Math.round(record.denyRate * 100)}%`, `${stats.denies} of ${stats.denies + stats.conceded} own creeps`)
               : card('Missed', String(stats.missed), 'enemy creeps you did not get')
           }
-          ${card('Gold', String(stats.gold), `${Math.round((stats.gold / config.duration) * 60)} GPM from creeps`)}
+          ${card('Gold', String(stats.gold), `${Math.round((stats.gold / Math.max(1, duration)) * 60)} GPM from creeps`)}
           ${card('Last hits / min', perMin.toFixed(1), benchmark(perMin))}
           ${card('Level', String(stats.level), `${stats.experience} experience`)}
           ${config.enemyHero ? card('Enemy hero', `${stats.enemyLastHits} LH`, `${stats.enemyDenies} denies against you`) : ''}

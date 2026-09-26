@@ -465,14 +465,13 @@ export class World {
   step(dt: number) {
     if (this.finished) return;
     this.time += dt;
-    if (this.time >= this.config.duration) {
-      this.finished = true;
-    }
 
-    this.waveTimer -= dt;
-    if (this.waveTimer <= 0) {
-      this.waveTimer += WAVE_INTERVAL;
-      this.spawnWave(RADIANT_SPAWN, DIRE_SPAWN);
+    if (this.waveCount < this.config.waves) {
+      this.waveTimer -= dt;
+      if (this.waveTimer <= 0) {
+        this.waveTimer += WAVE_INTERVAL;
+        this.spawnWave(RADIANT_SPAWN, DIRE_SPAWN);
+      }
     }
 
     if (!this.player.alive) {
@@ -509,6 +508,15 @@ export class World {
     this.updateFloaters(dt);
     this.separate();
     this.reap();
+
+    // Towers shoot whatever outlives the other side's wave, so the lane always
+    // empties once spawning stops.
+    if (this.waveCount >= this.config.waves && !this.creepsAlive()) this.finished = true;
+  }
+
+  private creepsAlive(): boolean {
+    for (const u of this.units.values()) if (u.alive && u.kind !== 'hero' && u.kind !== 'tower') return true;
+    return false;
   }
 
   // --------------------------------------------------------------- movement
@@ -521,14 +529,11 @@ export class World {
     const target = this.get(u.attackTargetId);
     let goal: Vec2 | null = null;
 
-    if (target) {
-      if (!this.inAttackRange(u, target)) {
-        const a = angleTo(u.pos, target.pos);
-        const stand = u.attackRange + u.radius + target.radius - 20;
-        goal = { x: target.pos.x - Math.cos(a) * stand, y: target.pos.y - Math.sin(a) * stand };
-      }
-    } else if (u.moveTarget) {
-      goal = u.moveTarget;
+    if (target && !this.inAttackRange(u, target)) {
+      goal = this.standSpot(u, target);
+    } else {
+      u.chaseSpot = null;
+      if (!target && u.moveTarget) goal = u.moveTarget;
     }
 
     if (!goal) return;
@@ -541,18 +546,109 @@ export class World {
 
     const a = angleTo(u.pos, goal);
     const step = Math.min(d, u.moveSpeed * dt);
-    // A chase re-aims at a fresh spot beside its target every step, so it can
-    // afford to go round; a move order is to one fixed point.
+    // A chase is to a spot kept free, so it can afford to go round; a move
+    // order is to one fixed point.
     const move = this.slide(u, target ? null : goal, Math.cos(a) * step, Math.sin(a) * step);
     if (!move) {
       // The spot is taken by a body. Dota stops you against it rather than
       // circling it forever, and a creep in the way of a creep waits its turn.
       if (!target && this.occupied(u, goal)) u.moveTarget = null;
+      // A chase that cannot get to its spot looks for another way round.
+      if (target) u.chaseSpot = null;
       return;
     }
     this.turnToward(u, Math.atan2(move.y, move.x), dt);
     u.pos.x += move.x;
     u.pos.y = clamp(u.pos.y + move.y, -LANE_HALF_WIDTH, LANE_HALF_WIDTH);
+  }
+
+  /**
+   * Where `u` should stand to hit `target`: just inside attack range, on the
+   * near side, and on a spot no body already holds.
+   *
+   * Aiming at the point on the straight line alone queued a creep behind the
+   * friends already trading there, pressed into their backs until the target
+   * died, sometimes for ten seconds and more. Dota's pathing walks it round
+   * them to an open side instead, which is why a wave closes around whatever
+   * it is fighting. So the spot is looked for around the ring, working out
+   * from the straight line round the far side of whoever holds it.
+   *
+   * The spot, once claimed, is kept in `chaseSpot` for as long as it stays
+   * free. Choosing afresh each frame flipped between spots whenever a friend
+   * walking alongside covered one and uncovered another, or the ring turned
+   * with the unit's own step, and the creep stepped left, right, left.
+   */
+  private standSpot(u: Unit, target: Unit): Vec2 {
+    const stand = u.attackRange + u.radius + target.radius - 20;
+    const home = angleTo(target.pos, u.pos);
+    const at = (a: number): Vec2 => ({
+      x: target.pos.x + Math.cos(a) * stand,
+      y: target.pos.y + Math.sin(a) * stand,
+    });
+    const free = (p: Vec2) => Math.abs(p.y) <= LANE_HALF_WIDTH && !this.occupied(u, p);
+    // A quarter turn either way of the straight line; past that the walk round
+    // is longer than waiting for a gap.
+    const reach = Math.PI / 2;
+
+    const kept = u.chaseSpot?.targetId === target.id ? u.chaseSpot.angle : null;
+    if (kept !== null && Math.abs(angleDelta(home, kept)) <= reach && free(at(kept))) return at(kept);
+
+    // Keep going the way round it was already going, or else round the far
+    // side of whoever holds the straight spot.
+    const r = bodyRadius(u.kind);
+    const straight = at(home);
+    let side = kept !== null ? Math.sign(angleDelta(home, kept)) : 0;
+    if (side === 0) {
+      for (const o of this.units.values()) {
+        if (o === u || !o.alive || dist(straight, o.pos) >= r + bodyRadius(o.kind)) continue;
+        side = -Math.sign(angleDelta(home, angleTo(target.pos, o.pos)));
+        break;
+      }
+    }
+    // Dead on, like the tie in {@link slide}: parity rather than the rng.
+    if (side === 0) side = u.id % 2 === 0 ? 1 : -1;
+
+    // A spot every half body round the ring, the straight one first. Only a
+    // side with no room left at all is given up for the other.
+    const inc = r / stand;
+    const angles = [home];
+    for (const s of [side, -side]) {
+      for (let k = 1; k * inc <= reach; k++) angles.push(home + s * k * inc);
+    }
+    // Free is not enough: a spot behind two friends standing closer than a
+    // body apart is free and cannot be got to. So the first choice is a spot
+    // it can walk to in a line, and only then one it will have to slide to.
+    const pick =
+      angles.find((a) => free(at(a)) && this.clearWalk(u, at(a))) ?? angles.find((a) => free(at(a)));
+    if (pick === undefined) {
+      u.chaseSpot = null;
+      return straight;
+    }
+    u.chaseSpot = { targetId: target.id, angle: pick };
+    return at(pick);
+  }
+
+  /** Whether `u` could walk in a straight line to `p` without touching a body. */
+  private clearWalk(u: Unit, p: Vec2): boolean {
+    const sx = p.x - u.pos.x;
+    const sy = p.y - u.pos.y;
+    const len2 = sx * sx + sy * sy;
+    if (len2 === 0) return true;
+    const r = bodyRadius(u.kind);
+    for (const o of this.units.values()) {
+      if (o === u || !o.alive) continue;
+      const wx = o.pos.x - u.pos.x;
+      const wy = o.pos.y - u.pos.y;
+      const along = wx * sx + wy * sy;
+      // Behind it, or beside it and walked away from: {@link blockerOf} never
+      // stops a step that opens a gap, so neither is in the way.
+      if (along <= 0) continue;
+      const t = Math.min(1, along / len2);
+      const cx = u.pos.x + sx * t - o.pos.x;
+      const cy = u.pos.y + sy * t - o.pos.y;
+      if (Math.hypot(cx, cy) < r + bodyRadius(o.kind) - 1e-6) return false;
+    }
+    return true;
   }
 
   /**
@@ -565,9 +661,18 @@ export class World {
    * full stride that way, which is what reads as stepping around. Wedged
    * between bodies, or pressed against one standing on the spot it was sent
    * to, it stops: that is being bodyblocked.
+   *
+   * A slide may run sideways but never back. Sliding off a second body can
+   * leave a step that points away from where the unit was going, and since a
+   * step away from every body is never blocked it would be taken at full
+   * stride — then undone by the next frame's step forward into the same
+   * pocket, so a creep pressed into the back of its own wave shuddered in
+   * place for as long as the fight lasted.
    */
   private slide(u: Unit, goal: Vec2 | null, dx: number, dy: number): Vec2 | null {
     const step = Math.hypot(dx, dy);
+    const wantX = dx;
+    const wantY = dy;
     for (let pass = 0; pass <= SLIDE_PASSES; pass++) {
       const hit = this.blockerOf(u, dx, dy);
       if (!hit) return { x: dx, y: dy };
@@ -592,6 +697,8 @@ export class World {
       }
       dx = (tx / t) * step;
       dy = (ty / t) * step;
+      // Tolerance so the dead-on sidestep, square to the wish, is kept.
+      if (dx * wantX + dy * wantY < -1e-6 * step * step) return null;
     }
     return null;
   }
@@ -788,6 +895,7 @@ export class World {
       seq: this.nextDamageSeq++,
       pos: { x: target.pos.x, y: target.pos.y },
       targetId: target.id,
+      sourceId: source.id,
       sourceKind: source.kind,
       sourceTeam: source.team,
       ranged,
@@ -924,6 +1032,7 @@ export class World {
     u.attackCooldown = 0;
     u.attackTargetId = null;
     u.moveTarget = null;
+    u.chaseSpot = null;
   }
 
   private reap() {

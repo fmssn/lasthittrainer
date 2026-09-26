@@ -8,6 +8,7 @@ import { HERO_TINT_SHIFT, KIND_SCALE, TEAM_TINT, TOWER_VISUAL_RADIUS, pickRadius
 import { Annotations } from './annotations.ts';
 import { ProjectileLayer } from './projectileView.ts';
 import { Effects } from './effects.ts';
+import { HoverOutline, OCCLUDER_LAYER } from './outline.ts';
 import { SiegeView } from './siegeView.ts';
 
 /**
@@ -16,7 +17,8 @@ import { SiegeView } from './siegeView.ts';
  * The drawing splits in two. Anything that lives on the ground plane (the
  * selection ring, tower zones) is real geometry, and anything that has to stay
  * screen-sized and legible mid-swing (health bars, floaters) is drawn on a 2D
- * canvas over the stage in {@link Annotations}.
+ * canvas over the stage in {@link Annotations}. The outline round the unit
+ * under the cursor is a screen-space pass of its own, {@link HoverOutline}.
  *
  * Screen points are CSS pixels relative to the canvas; world points are sim
  * units. `#game` stays transparent on top as the pointer surface, with the
@@ -94,12 +96,20 @@ interface Rec {
   ghost: number;
 }
 
+/** Units hide the hover outline where they stand in front of it; the lane and scenery do not. */
+function occludes(root: THREE.Object3D) {
+  root.traverse((o) => o.layers.enable(OCCLUDER_LAYER));
+}
+
 function heroTint(unit: Unit): number {
   return new THREE.Color(TEAM_TINT[unit.team]).multiplyScalar(HERO_TINT_SHIFT).getHex();
 }
 
 export class Renderer3D {
   cursor: Vec2 = { x: 0, y: 0 };
+  /** The cursor in canvas pixels, or null while it is off the canvas. */
+  pointer: Vec2 | null = null;
+  /** The unit under the cursor, picked afresh every frame in {@link draw}. */
   hoverId: number | null = null;
 
   private readonly canvas: HTMLCanvasElement;
@@ -112,7 +122,7 @@ export class Renderer3D {
   private ringsUsed = 0;
   private readonly bolts: ProjectileLayer;
   private readonly effects: Effects;
-  private readonly cursorRing: THREE.Mesh;
+  private readonly outline: HoverOutline;
 
   private readonly raycaster = new THREE.Raycaster();
   private readonly ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -139,8 +149,7 @@ export class Renderer3D {
     this.effects = new Effects(this.stage.scene);
     this.bolts = new ProjectileLayer(this.stage.scene, this.effects);
 
-    this.cursorRing = this.makeRing(26, 0xffffff, 0.35);
-    this.stage.scene.add(this.cursorRing);
+    this.outline = new HoverOutline(this.stage.renderer);
 
     window.addEventListener('resize', this.onResize);
     this.observer = new ResizeObserver(() => this.resize());
@@ -248,11 +257,15 @@ export class Renderer3D {
     this.drawSelection(world);
     for (let i = this.ringsUsed; i < this.rings.length; i++) this.rings[i].visible = false;
 
-    this.cursorRing.position.set(this.cursor.x, 2, this.cursor.y);
     this.bolts.sync(world, dt, this.effects.consume(world));
     this.effects.update(dt);
 
+    // Picked here rather than on mousemove: a still cursor sees creeps walk
+    // under it and away, and the camera follows the hero underneath it too.
+    this.hoverId = this.pointer ? (this.pickUnit(this.pointer, world, world.player)?.id ?? null) : null;
+
     this.stage.render();
+    this.outline.render(this.stage.scene, this.stage.camera, this.hoverObject());
     this.annotations.draw(world, this.hoverId);
   }
 
@@ -261,6 +274,7 @@ export class Renderer3D {
     this.observer.disconnect();
     this.clearScene();
     this.annotations.dispose();
+    this.outline.dispose();
     this.effects.dispose();
     this.bolts.dispose();
     this.stage.dispose();
@@ -275,6 +289,7 @@ export class Renderer3D {
       let mesh = this.towers.get(unit.id);
       if (!mesh) {
         mesh = towerMesh(unit);
+        occludes(mesh);
         this.towers.set(unit.id, mesh);
         this.stage.scene.add(mesh);
       }
@@ -286,6 +301,7 @@ export class Renderer3D {
     let rec = this.views.get(unit.id);
     if (!rec) {
       rec = { view: this.makeView(unit), last: unit, ghost: 0 };
+      occludes(rec.view.root);
       this.stage.scene.add(rec.view.root);
       this.views.set(unit.id, rec);
     }
@@ -340,6 +356,11 @@ export class Renderer3D {
       mesh.removeFromParent();
       this.towers.delete(id);
     }
+  }
+
+  private hoverObject(): THREE.Object3D | null {
+    if (this.hoverId === null) return null;
+    return this.views.get(this.hoverId)?.view.root ?? this.towers.get(this.hoverId) ?? null;
   }
 
   // ------------------------------------------------------------ ground rings

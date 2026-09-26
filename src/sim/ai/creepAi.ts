@@ -34,7 +34,8 @@ import { dist } from '../math.ts';
  *   1. forced aggro from a hero's attack order
  *   2. the current target, while it is alive and in attack range
  *   3. the best enemy inside acquisition range, by unit type, then threat, then
- *      distance — walk at it
+ *      distance, where distance alone never takes it off what it is already
+ *      walking at — walk at it
  *   4. the current target, wherever it has gone
  *   5. nothing: march down the lane
  */
@@ -66,7 +67,13 @@ export function runCreepAi(world: World, creep: Unit) {
     return;
   }
 
-  const picked = bestInAcquisition(world, creep, shunned) ?? (creep.moveSpeed > 0 ? current : null);
+  // Walking at something is sticky too. Re-picking every frame flipped between
+  // two enemies at about the same distance, since each step towards one left
+  // the other the closer, and the creep swayed on the spot. So distance alone
+  // never takes it off what it is walking at; type and threat still do.
+  const best = bestInAcquisition(world, creep, shunned);
+  const keep = !!current && !!best && candidate(world, creep, current) && !outranks(world, creep, best, current);
+  const picked = keep ? current : (best ?? (creep.moveSpeed > 0 ? current : null));
   if (picked) {
     if (picked === shunned) creep.shunnedId = null;
     creep.attackTargetId = picked.id;
@@ -113,6 +120,18 @@ function threat(world: World, creep: Unit, u: Unit): number {
   return target.team === creep.team ? 2 : 0;
 }
 
+/** Whether `u` is one a creep picks from: inside its acquisition range, or already in reach. */
+function candidate(world: World, creep: Unit, u: Unit): boolean {
+  return dist(creep.pos, u.pos) <= acquisitionRange(creep.kind) || world.inAttackRange(creep, u);
+}
+
+/** Whether `a` beats `b` on unit type or threat: everything in a pick but distance. */
+function outranks(world: World, creep: Unit, a: Unit, b: Unit): boolean {
+  const pa = priority(creep, a);
+  const pb = priority(creep, b);
+  return pa > pb || (pa === pb && threat(world, creep, a) > threat(world, creep, b));
+}
+
 /** Highest-priority enemy the creep could hit without moving, nearest to break ties. */
 function bestInAttackRange(world: World, creep: Unit): Unit | null {
   let best: Unit | null = null;
@@ -140,22 +159,20 @@ function bestInAttackRange(world: World, creep: Unit): Unit | null {
  * qualifies.
  */
 function bestInAcquisition(world: World, creep: Unit, shunned: Unit | null = null): Unit | null {
-  const range = acquisitionRange(creep.kind);
   let best: Unit | null = null;
   let fallback: Unit | null = null;
   let bestP = -Infinity;
   let bestT = -Infinity;
   let bestD = Infinity;
   for (const u of world.units.values()) {
-    if (!u.alive || u.team === creep.team) continue;
-    const d = dist(creep.pos, u.pos);
-    if (d > range && !world.inAttackRange(creep, u)) continue;
+    if (!u.alive || u.team === creep.team || !candidate(world, creep, u)) continue;
     if (u === shunned) {
       fallback = u;
       continue;
     }
     const p = priority(creep, u);
     const t = threat(world, creep, u);
+    const d = dist(creep.pos, u.pos);
     if (p > bestP || (p === bestP && (t > bestT || (t === bestT && d < bestD)))) {
       bestP = p;
       bestT = t;

@@ -28,6 +28,12 @@ Blender and packs from `tools/fetch_assets.sh`:
 melee_creep` for one look, `--renders DIR` for contact sheets under `xvfb-run`).
 It checks every file it writes and two builds are byte-identical.
 
+The sounds in `public/audio/` were generated with Stable Audio 3 Medium on a
+ComfyUI (`tools/audio/generate.py`, then `process.py` to rank and clean the
+takes) and picked by ear. `tools/audio/keepers.json` names the prompt and take
+behind every file, and `docs/sounds.md` says why each prompt reads as it does
+and why it is Medium and not Medium Base.
+
 `tools/blender/check_anim.py` checks the hero clips the way three.js plays
 them and films what it finds: `<blender> --background --python
 tools/blender/check_anim.py -- --glb public/models/heroes/swordmaster.glb
@@ -76,14 +82,14 @@ catches the one class of bug nothing else here can: a side bias. A lane where
 Radiant quietly farms better than Dire would flatter you for three minutes and
 teach you nothing, and staring at the code does not find it. Current reading,
 with the Frost Archer on both sides and heroes levelling — profile 3 against
-profile 3 comes out 6.0 to 10.3 last hits, gap 4.3, and the ladder runs 4.3 ->
-4.0 -> 10.3 -> 11.3 -> 15.3. Three seeds swing that gap either way: over twelve
-the mirror is 8.1 to 8.7 and over another 24 it is 7.9 to 8.1, with the ladder
-monotonic in both (2.6 -> 4.5 -> 8.1 -> 11.7 -> 15.3 over the 24). The lane
-used to lean Dire by 1.3 to 1.9 on the same seed sets; that went away when
-creeps stopped taking whatever was already in attack range, though the exact
-mechanism was not pinned down. Re-run it after touching creep AI, the bot, or
-anything in the combat path.
+profile 3 comes out 4.0 to 7.7 last hits, gap 3.7, and the ladder runs 2.7 ->
+4.7 -> 7.7 -> 9.0 -> 11.0. Three seeds swing that gap badly: over twelve the
+mirror is 5.0 to 7.7, over another 24 it is 7.1 to 8.1 and over 60 more (seeds
+200-259) it is 7.1 to 7.8, with the ladder monotonic throughout (2.8 -> 5.0 ->
+8.1 -> 9.9 -> 13.7 over the 24). So Dire still edges the lane, by under a last
+hit. That gap is open, not accepted; it read 1.3 to 1.9 on the 12 and 24
+before creeps stopped taking whatever was already in attack range. Re-run it
+after touching creep AI, the bot, or anything in the combat path.
 
 To preview in-session, use `preview_start` with the launch config named
 `lasthittrainer` (`.claude/launch.json`); do not start the dev server via Bash.
@@ -127,8 +133,17 @@ src/render3d/     The renderer: three.js stage + screen-space overlay
   effects.ts      Pooled impact sprites, driven by World.damageLog
   projectileView.ts  Oriented bolts with trails; flat travel, no arc
   renderer3d.ts   Renderer3D: scene + views + ground rings, and unit picking
+  outline.ts      The hover outline: a screen-space pass over the stage
   annotations.ts  Screen-space layer: health bars (heroes with their level plate),
                   aggro timer, floaters
+src/audio/        Lane sound, render-side like the effects
+  sounds.ts       The manifest and the whole mix: file, group, level, voice cap
+  mixer.ts        Web Audio: groups, limiter, loading, voice stealing, jitter.
+                  Knows nothing about World.
+  laneAudio.ts    Reads World each frame and calls the mixer. The only file
+                  that knows what a DamageEvent is.
+  settings.ts     Mute (the M key), in localStorage (key `lht.audio.v1`). No
+                  volume controls in the menu, by request.
 src/ui/           menu.ts, hud.ts, results.ts — plain DOM over the canvas
   inventory.ts    The six item slots, shared by the menu, HUD and results
   itemIcons.ts    Item icons as SVG, in the style of the WC3 buttons
@@ -138,6 +153,7 @@ src/main.ts       Entry point: state machine (menu/playing/paused/results) + loo
 src/slice3d.ts    Debug entry point: unattended sim, clip histogram, free look
 tools/blender/    build_units.py builds the KayKit creeps in public/models/units/;
                   heroes.blend holds the hand-built heroes in public/models/heroes/
+tools/audio/      generate.py, process.py and the record of every sound's take
 ```
 
 ### Simulation rules
@@ -222,6 +238,14 @@ tools/blender/    build_units.py builds the KayKit creeps in public/models/units
   the hull, because attack range is measured from it: the authored range plus
   both hulls, edge to edge. A tower's 700 reaches a hero 868 from its centre,
   and a melee creep's 100 is 140.
+- A slide runs along a body but never back: a step deflected off two bodies
+  can point away from the goal, and taking it made a creep shudder in the
+  back of its own wave, forward into the pocket and out again every frame.
+  A unit walking into range heads for a free spot on the ring round its
+  target (`World.standSpot`), preferring one it can walk to in a line, and
+  keeps it in `Unit.chaseSpot` until a body takes it. Choosing afresh every
+  frame flip-flopped between spots in the same way. Both are covered by a
+  stride-reversal count in `npm run check`.
 
 ### Performance
 
@@ -248,7 +272,11 @@ exist.
 The drawing splits in two: ground-plane art (the selection ring, tower zones)
 is real geometry, while anything that must stay screen-sized and legible
 mid-swing (health bars, floaters) is drawn by `annotations.ts` on a 2D canvas
-over the stage.
+over the stage. The unit under the cursor is outlined by a screen-space pass
+(`outline.ts`): it is drawn flat into a mask and the pixels just outside it are
+lit, except where another unit stands in front. Every unit view is on
+`OCCLUDER_LAYER` for that depth test; the lane is not, or it would eat the
+bottom of every outline. There is no cursor ring on the ground.
 
 There are no training aids. A killable highlight, damage preview, deny line on
 the bars, an in-flight damage chunk, wind-up arc, range ring, a dashed line to
@@ -296,6 +324,31 @@ renderer follows it by `seq` to place impacts. The sim still owns `floaters`,
 which is a layering smell inherited from the first version; new presentational
 state should go in the renderer.
 
+### Audio
+
+Audio is render-side too, and follows `damageLog` by `seq` the same way:
+`laneAudio.ts` turns new damage events into hits, deaths and the coin or deny,
+new projectile ids into launches, and a hero's phase turning to `windup` into
+`sword_swing` or `bow_draw`. `DamageEvent.sourceId` exists for it, so your blow
+can be told from the bot's. It runs only while a drill plays; the menu
+backdrop is a real World and stays silent. Its jitter uses `Math.random()`,
+which is fine outside the sim and must never touch `world.rng`.
+
+The same rule as the overlay: the drill should sound like the game. Dota plays
+an attack sound on contact and a coin on a last hit, and nothing that says a
+creep is killable, so neither does this. The coin and deny are yours alone and
+centred; your hero plays centred, the bot's 4 dB lower where it happens.
+
+The sounds are **not** a startup dependency, unlike the models: they load
+beside them, and a file that fails warns once and stays silent. The context
+starts suspended, as browsers keep it until a gesture, and is resumed from the
+first overlay click. Pause and a hidden tab suspend it, which freezes what was
+mid-air as well. `__lht.audioStats()` counts the plays requested per sound,
+audible or not; `npm run check` holds it to a coin per last hit and a deny per
+deny over three minutes of lane, with a counting mixer standing in for Web
+Audio. Nothing but a person checks the mix. Levels live in `sounds.ts` and
+nowhere else; if the lane is muddy, turn the lane down, never the rewards up.
+
 ## Conventions
 
 - Strict TypeScript, including `noUnusedLocals` / `noUnusedParameters`.
@@ -314,6 +367,13 @@ state should go in the renderer.
 
 ## Known gaps
 
+- Only the creep level in `sounds.ts` has been tuned by ear (`CREEP_DB`, from
+  -10 down to -22); the rest is the plan's starting levels. The two tests for
+  it: every last hit is audible without watching the screen, and a creep's
+  hits on your target can be told from the rest of the lane, on laptop
+  speakers and on headphones.
+- One take per sound. Where docs/sounds.md asks for two or three variations,
+  the pitch and level jitter on every play stands in for them.
 - `vite build` only picks up `index.html`; `slice3d.html` is dev-only until it is
   added as a rollup input.
 - There are no abilities, so no skill points, talents or innates, and no items
@@ -326,9 +386,10 @@ state should go in the renderer.
 - No fog of war, no day/night, no runes, no neutral camps, no high ground and so
   no uphill miss chance.
 - Creep waves are 3 melee + 1 ranged, with a siege creep every 10th wave from
-  5:00 as in Dota. No drill length reaches 5:00, so none ever enters a drill,
-  and the early-aggro block covers every drill from start to finish. Flagbearer
-  creeps, which modern waves carry, are not modelled.
+  5:00 as in Dota. That is the 11th wave and the menu stops at ten, so none
+  ever enters a drill, and the early-aggro block covers all of every drill but
+  the tail of a ten-wave one. Flagbearer creeps, which modern waves carry, are
+  not modelled.
 - Towers are invulnerable, so creeps that reach one cannot trade with it. In
   practice the lane oscillates around the middle and never parks a wave on a
   tower; a five-minute headless run holds the frontline between 2320 and 3115

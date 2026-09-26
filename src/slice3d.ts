@@ -21,7 +21,7 @@ const app = document.getElementById('app') as HTMLDivElement;
 // The readout doubles as the DOM anchor: the stage canvases go in front of it.
 const info = document.getElementById('info') as HTMLDivElement;
 
-const world = new World({ ...DEFAULT_CONFIG, duration: 99999 });
+const world = new World({ ...DEFAULT_CONFIG, waves: Infinity });
 
 loadUnitAssets((path) => `/${path}`)
   .then((assets) => start(new Renderer3D(app, info, assets)))

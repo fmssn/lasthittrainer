@@ -5,8 +5,12 @@ export interface DrillConfig {
   heroId: string;
   /** Your starting items. The bot always starts empty-handed. */
   items: ItemId[];
-  /** Drill length in seconds. */
-  duration: number;
+  /**
+   * Drill length in creep waves, counting the one already fighting at the
+   * start. The drill ends once every creep of the last wave has died, so the
+   * last wave is farmed as fully as the first.
+   */
+  waves: number;
 
   /** Layer 2: allow denying your own creeps. */
   deniesEnabled: boolean;
@@ -24,7 +28,7 @@ export interface DrillConfig {
 export const DEFAULT_CONFIG: DrillConfig = {
   heroId: 'frost_archer',
   items: [],
-  duration: 180,
+  waves: 6,
   deniesEnabled: true,
   enemyHero: true,
   enemyHeroId: 'swordmaster',

@@ -16,7 +16,8 @@ import { loadRuns, type RunRecord } from '../stats.ts';
 import { inventoryHtml } from './inventory.ts';
 import { itemIconUrl } from './itemIcons.ts';
 
-const DURATIONS = [60, 120, 180, 300];
+/** Two waves a minute, so these are the 1, 2, 3 and 5 minute drills there used to be. */
+const WAVE_COUNTS = [2, 4, 6, 10];
 
 function pips(n: number): string {
   return Array.from({ length: 5 }, (_, i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('');
@@ -30,7 +31,10 @@ export class Menu {
     root: HTMLElement,
     private onStart: (config: DrillConfig) => void,
   ) {
-    this.config = { ...DEFAULT_CONFIG, ...loadConfig() };
+    const { duration, ...saved } = loadConfig() as Partial<DrillConfig> & { duration?: number };
+    this.config = { ...DEFAULT_CONFIG, ...saved };
+    // A config saved when the length was in minutes: a wave every 30 seconds.
+    if (saved.waves === undefined && typeof duration === 'number') this.config.waves = Math.round(duration / 30);
     this.config.items = legalLoadout(this.config.items);
     // A saved config can name a hero that has since been renamed or retired.
     this.config.heroId = canonicalHeroId(this.config.heroId) ?? DEFAULT_CONFIG.heroId;
@@ -133,8 +137,8 @@ export class Menu {
         <section class="block">
           <h2>Drill length</h2>
           <div class="chip-row">
-            ${DURATIONS.map(
-              (d) => `<button class="chip ${c.duration === d ? 'selected' : ''}" data-duration="${d}">${d / 60} min</button>`,
+            ${WAVE_COUNTS.map(
+              (n) => `<button class="chip ${c.waves === n ? 'selected' : ''}" data-waves="${n}">${n} waves</button>`,
             ).join('')}
           </div>
         </section>
@@ -218,8 +222,8 @@ export class Menu {
       n.addEventListener('click', () => this.set('items', sellOne(this.config.items, n.dataset.sellItem as ItemId))),
     );
     this.el.querySelector('[data-clear-items]')?.addEventListener('click', () => this.set('items', []));
-    this.el.querySelectorAll<HTMLElement>('[data-duration]').forEach((n) =>
-      n.addEventListener('click', () => this.set('duration', Number(n.dataset.duration))),
+    this.el.querySelectorAll<HTMLElement>('[data-waves]').forEach((n) =>
+      n.addEventListener('click', () => this.set('waves', Number(n.dataset.waves))),
     );
     this.el.querySelectorAll<HTMLElement>('[data-difficulty]').forEach((n) =>
       n.addEventListener('click', (e) => {
@@ -243,7 +247,7 @@ function runRow(r: RunRecord): string {
     <span class="run-hero"><i style="background:${hero.color}"></i>${hero.name}</span>
     <span class="run-score"><b>${r.lastHits}</b> LH${r.deniesEnabled ? ` · <b>${r.denies}</b> DN` : ''}</span>
     <span class="run-acc">${Math.round(r.accuracy * 100)}%</span>
-    <span class="run-meta">${r.duration / 60}m${r.enemyHero ? ` · vs ${DIFFICULTY_NAMES[r.enemyDifficulty].toLowerCase()}` : ' · solo'}${
+    <span class="run-meta">${r.waves ? `${r.waves} waves` : `${Math.round(r.duration / 60)}m`}${r.enemyHero ? ` · vs ${DIFFICULTY_NAMES[r.enemyDifficulty].toLowerCase()}` : ' · solo'}${
       r.items?.length ? ` · ${loadoutCost(r.items)}g items` : ''
     }</span>
     <span class="run-when">${when}</span>

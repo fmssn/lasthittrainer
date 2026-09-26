@@ -1,0 +1,122 @@
+[
+ {
+  "name": "bow_draw",
+  "seconds": 2.0,
+  "batch": 32,
+  "prompt": "TrackType: SFX, a wooden longbow drawn back, creaking wood and a tightening bowstring, rising tension, stopping at full draw with no release, dry close-miked studio recording, single isolated one-shot"
+ },
+ {
+  "name": "bow_release",
+  "seconds": 2.0,
+  "batch": 32,
+  "prompt": "TrackType: SFX, a heavy longbow string released, deep thrumming twang with a sharp snap and an arrow whooshing away, full-bodied, dry close-miked studio recording, single isolated one-shot, sharp attack"
+ },
+ {
+  "name": "creep_death",
+  "seconds": 2.0,
+  "batch": 32,
+  "prompt": "TrackType: SFX, a small skeleton collapsing to the ground, dry bones clattering and a light armor rattle, brief hollow rasp at the start, dry close-miked studio recording, single isolated one-shot"
+ },
+ {
+  "name": "deny",
+  "seconds": 2.0,
+  "batch": 32,
+  "prompt": "TrackType: SFX, a short muted wooden knock with a dull dry click, soft and understated, low-mid body, quick decay, dry close-miked studio recording, single isolated one-shot, sharp attack"
+ },
+ {
+  "name": "frost_arrow_hit",
+  "seconds": 2.0,
+  "batch": 32,
+  "prompt": "TrackType: SFX, an arrow thudding into a target, short wooden thunk with a small crackle of ice forming, crisp and cold, dry close-miked studio recording, single isolated one-shot, sharp attack"
+ },
+ {
+  "name": "hero_death",
+  "seconds": 2.0,
+  "batch": 32,
+  "prompt": "TrackType: SFX, an armored warrior falling heavily to the ground, metal armor clattering and a low body thud, weapon dropping after, dry close-miked studio recording, single isolated one-shot"
+ },
+ {
+  "name": "horn",
+  "seconds": 5,
+  "batch": 32,
+  "prompt": "TrackType: SFX, a single long note on a large war horn blown in the distance across an open valley, deep and brassy, natural outdoor echo, slow swell and fade"
+ },
+ {
+  "name": "lane_ambience",
+  "seconds": 60,
+  "batch": 8,
+  "prompt": "TrackType: SFX, outdoor forest clearing ambience, gentle steady wind through trees, soft distant birdsong, rustling leaves, calm and even, no distinct events, field recording"
+ },
+ {
+  "name": "last_hit_gold",
+  "seconds": 2.0,
+  "batch": 32,
+  "prompt": "TrackType: SFX, a few heavy gold coins dropped into an open palm, natural metallic clink with a warm low-mid body, real coins, dry close-miked studio recording, single isolated one-shot, sharp attack"
+ },
+ {
+  "name": "melee_creep_hit",
+  "seconds": 2.0,
+  "batch": 32,
+  "prompt": "TrackType: SFX, a rusty short blade hacking into a wooden shield, dull clack with a small bony knock, short and light, dry close-miked studio recording, single isolated one-shot, sharp attack"
+ },
+ {
+  "name": "ranged_creep_cast",
+  "seconds": 2.0,
+  "batch": 32,
+  "prompt": "TrackType: SFX, a small magic bolt fired from a wooden staff, soft whooshing fizz with a hollow puff, short and light, dry close-miked studio recording, single isolated one-shot, sharp attack"
+ },
+ {
+  "name": "ranged_creep_hit",
+  "seconds": 2.0,
+  "batch": 32,
+  "prompt": "TrackType: SFX, a small magic bolt hitting a target, quick sizzling pop with a tiny crackle, short and light, dry close-miked studio recording, single isolated one-shot, sharp attack"
+ },
+ {
+  "name": "run_end",
+  "seconds": 5,
+  "batch": 32,
+  "prompt": "TrackType: SFX, a single deep war drum hit with a low gong ringing out, solemn and warm, slow natural decay, dry close-miked studio recording"
+ },
+ {
+  "name": "siege_hit",
+  "seconds": 2.0,
+  "batch": 32,
+  "prompt": "TrackType: SFX, a large boulder slamming into the ground and a wooden barricade, heavy low crunch with scattered debris, short tail, dry close-miked studio recording, single isolated one-shot, sharp attack"
+ },
+ {
+  "name": "siege_launch",
+  "seconds": 2.0,
+  "batch": 32,
+  "prompt": "TrackType: SFX, a wooden catapult arm snapping forward and hitting its stop, deep wooden thump with a rope creak, heavy and short, dry close-miked studio recording, single isolated one-shot, sharp attack"
+ },
+ {
+  "name": "sword_hit",
+  "seconds": 2.0,
+  "batch": 32,
+  "prompt": "TrackType: SFX, a heavy steel sword striking a bony armored target, sharp metallic chop with a crunchy low thud, short and punchy, dry close-miked studio recording, single isolated one-shot, sharp attack"
+ },
+ {
+  "name": "sword_swing",
+  "seconds": 2.0,
+  "batch": 32,
+  "prompt": "TrackType: SFX, a heavy two-handed sword swung fast through the air, short airy whoosh with a faint metallic edge, rising then cut off, dry close-miked studio recording, single isolated one-shot, sharp attack"
+ },
+ {
+  "name": "tower_attack",
+  "seconds": 2.0,
+  "batch": 32,
+  "prompt": "TrackType: SFX, an ancient stone tower firing a bolt of arcane energy, deep resonant magical launch with a low hum, short, dry close-miked studio recording, single isolated one-shot, sharp attack"
+ },
+ {
+  "name": "tower_hit",
+  "seconds": 2.0,
+  "batch": 32,
+  "prompt": "TrackType: SFX, a heavy bolt of arcane energy striking a target, deep punchy magical impact with a short crackle, dry close-miked studio recording, single isolated one-shot, sharp attack"
+ },
+ {
+  "name": "ui_click",
+  "seconds": 2.0,
+  "batch": 32,
+  "prompt": "TrackType: SFX, a soft wooden button click, small and muted, very short, dry close-miked studio recording, single isolated one-shot, sharp attack"
+ }
+]

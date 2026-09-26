@@ -11,12 +11,14 @@ import type { World } from './sim/world.ts';
  *   S                  stop (cancels the backswing, frees the next order)
  *   scroll             zoom
  *   space              pause
+ *   M                  mute
  */
 export class Input {
   private world: World | null = null;
   /** Cursor in canvas pixels, so a keystroke can aim at what the mouse is over. */
   private lastScreen: Vec2 = { x: 0, y: 0 };
   onPause: (() => void) | null = null;
+  onMute: (() => void) | null = null;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -25,12 +27,15 @@ export class Input {
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     canvas.addEventListener('mousedown', (e) => this.onMouseDown(e));
     canvas.addEventListener('mousemove', (e) => this.onMouseMove(e));
+    canvas.addEventListener('mouseleave', () => (this.renderer.pointer = null));
     canvas.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
     window.addEventListener('keydown', (e) => this.onKeyDown(e));
   }
 
   attach(world: World | null) {
     this.world = world;
+    // The menu and results draw a lane behind them, which nothing should outline.
+    if (!world) this.renderer.pointer = null;
   }
 
   private screen(e: MouseEvent) {
@@ -54,10 +59,8 @@ export class Input {
 
   private onMouseMove(e: MouseEvent) {
     this.lastScreen = this.screen(e);
-    const p = this.point(e);
-    this.renderer.cursor = p;
-    const world = this.world;
-    this.renderer.hoverId = world ? (this.pick(e, world)?.id ?? null) : null;
+    this.renderer.cursor = this.point(e);
+    this.renderer.pointer = this.world ? this.lastScreen : null;
   }
 
   private onMouseDown(e: MouseEvent) {
@@ -88,6 +91,10 @@ export class Input {
     if (key === 'escape' || key === ' ') {
       e.preventDefault();
       this.onPause?.();
+      return;
+    }
+    if (key === 'm') {
+      this.onMute?.();
       return;
     }
     if (!world || !world.player.alive) return;

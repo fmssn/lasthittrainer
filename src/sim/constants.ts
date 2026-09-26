@@ -16,7 +16,8 @@ export const WAVE_INTERVAL = 30;
 
 /**
  * Siege creeps join every 10th wave, the first at 5:00 (7.06, down from every
- * 7th). Every drill here ends by 5:00, so none ever reaches the lane.
+ * 7th). That is the 11th wave, and the menu's longest drill is ten, so none
+ * ever joins one.
  */
 export const SIEGE_EVERY_N_WAVES = 10;
 

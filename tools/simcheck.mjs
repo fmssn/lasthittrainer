@@ -207,7 +207,7 @@ const results = await page.evaluate(async () => {
 
   // --- Attack classes: creep_irresolute, creep_piercing, creep_siege -------
   {
-    const w = new World({ ...DEFAULT_CONFIG, seed: 7, enemyHero: false, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, seed: 7, enemyHero: false, waves: Infinity });
     const { spawnUnit } = units;
     const at = { x: 3000, y: 0 };
     const make = (tpl, team) => spawnUnit(tpl, team, at, w.rng);
@@ -239,7 +239,7 @@ const results = await page.evaluate(async () => {
   // Strip the lane down to one hero and one inert dummy so nothing else can
   // touch the creep's health, then measure when damage actually lands.
   const rig = (heroId) => {
-    const w = new World({ ...DEFAULT_CONFIG, heroId, seed: 5, enemyHero: false, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, heroId, seed: 5, enemyHero: false, waves: Infinity });
     const hero = w.player;
     const creep = [...w.units.values()].find((u) => u.team === 'dire' && u.kind === 'melee_creep');
     w.units.clear();
@@ -277,6 +277,8 @@ const results = await page.evaluate(async () => {
     // a backswing — the follow-through never gates the next swing.
     const second = timeToDamage(w, creep);
     check('melee cadence is the attack interval', second, constants.attackInterval(hero.baseAttackTime, hero.attackSpeedBonus), 0.012);
+    // The audio tells your blow from the bot's by who swung, not by kind and team.
+    check('damage event names the melee swinger', w.damageLog.at(-1).sourceId, hero.id);
   }
 
   {
@@ -285,6 +287,7 @@ const results = await page.evaluate(async () => {
     w.orderAttack(hero, creep);
     const windup = constants.attackPointTime(hero.attackPoint, hero.attackSpeedBonus);
     check('ranged hit lands after travel', timeToDamage(w, creep), windup + 100 / hero.projectileSpeed, 0.02);
+    check('damage event names the archer, not the arrow', w.damageLog.at(-1).sourceId, hero.id);
   }
 
   {
@@ -327,7 +330,7 @@ const results = await page.evaluate(async () => {
 
   // --- Experience: shared by the enemy heroes near a death ----------------
   {
-    const w = new World({ ...DEFAULT_CONFIG, heroId: 'swordmaster', enemyHeroId: 'swordmaster', seed: 21, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, heroId: 'swordmaster', enemyHeroId: 'swordmaster', seed: 21, waves: Infinity });
     // Hold the bot still: this is about who gets paid, not about laning.
     w.enemyAi = null;
     const hero = w.player;
@@ -416,7 +419,7 @@ const results = await page.evaluate(async () => {
     // The rule the whole aggro layer rests on: creeps in a fight keep their
     // targets, and when they pick again an idle hero is the lowest threat, so a
     // hero standing inside an engaged wave takes nothing.
-    const w = new World({ ...DEFAULT_CONFIG, seed: 11, enemyHero: false, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, seed: 11, enemyHero: false, waves: Infinity });
     settle(w, 4); // let the waves meet and pair off
     const busy = [...w.units.values()].find(
       (u) => u.team === 'dire' && u.kind === 'melee_creep' && u.attackTargetId,
@@ -430,7 +433,7 @@ const results = await page.evaluate(async () => {
 
   {
     // ...and the exception: an attack order on their hero turns them onto you.
-    const w = new World({ ...DEFAULT_CONFIG, seed: 12, enemyHero: true, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, seed: 12, enemyHero: true, waves: Infinity });
     settle(w, 2);
     const hero = w.player;
     const enemy = w.enemy;
@@ -450,7 +453,7 @@ const results = await page.evaluate(async () => {
 
   {
     // Forced aggro lets go on its own after AGGRO_DURATION.
-    const w = new World({ ...DEFAULT_CONFIG, seed: 13, enemyHero: true, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, seed: 13, enemyHero: true, waves: Infinity });
     settle(w, 2);
     const hero = w.player;
     hero.pos = { x: w.enemy.pos.x - 200, y: w.enemy.pos.y };
@@ -463,7 +466,7 @@ const results = await page.evaluate(async () => {
 
   {
     // Sticky targeting: a creep mid-fight does not swap to something nearer.
-    const w = new World({ ...DEFAULT_CONFIG, seed: 14, enemyHero: false, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, seed: 14, enemyHero: false, waves: Infinity });
     settle(w, 4);
     const attacker = [...w.units.values()].find(
       (u) => u.team === 'dire' && u.kind === 'melee_creep' && w.get(u.attackTargetId),
@@ -484,7 +487,7 @@ const results = await page.evaluate(async () => {
     // below both. Staged, with only the picking creep thinking.
     const { runCreepAi } = await import('/src/sim/ai/creepAi.ts');
     const { spawnUnit } = units;
-    const w = new World({ ...DEFAULT_CONFIG, heroId: 'swordmaster', seed: 16, enemyHero: false, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, heroId: 'swordmaster', seed: 16, enemyHero: false, waves: Infinity });
     const hero = w.player;
     // Explicit ids: after a hot reload the page can hold a second copy of
     // units.ts whose counter would hand out ids the world already uses.
@@ -535,7 +538,7 @@ const results = await page.evaluate(async () => {
     // Forced aggro reaches 500 from the ordering hero, whatever the creep:
     // not a ranged creep's 600 acquisition range. Past 5:00, so the early-aggro
     // block stays out of it.
-    const w = new World({ ...DEFAULT_CONFIG, seed: 17, enemyHero: true, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, seed: 17, enemyHero: true, waves: Infinity });
     w.time = constants.AGGRO_BLOCK_UNTIL;
     const hero = w.player;
     const all = [...w.units.values()].filter((u) => u.team === 'dire' && u.kind === 'ranged_creep');
@@ -555,7 +558,7 @@ const results = await page.evaluate(async () => {
     // Before 5:00 a lane creep with nothing to fight, far from its own tower,
     // ignores a pull (7.27). An enemy creep in its acquisition range lifts
     // that, and so does being within 1550 of its own tier 1.
-    const w = new World({ ...DEFAULT_CONFIG, seed: 19, enemyHero: true, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, seed: 19, enemyHero: true, waves: Infinity });
     const hero = w.player;
     const all = [...w.units.values()];
     const lone = all.find((u) => u.team === 'dire' && u.kind === 'melee_creep');
@@ -586,7 +589,7 @@ const results = await page.evaluate(async () => {
     // Every swing at a hero draws the creeps near the swinger, auto-attacks
     // included, while the cooldown is ready. It forces no chase and starts no
     // cooldown. Staged still: nothing but the hero's swing can move a target.
-    const w = new World({ ...DEFAULT_CONFIG, heroId: 'frost_archer', seed: 18, enemyHero: true, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, heroId: 'frost_archer', seed: 18, enemyHero: true, waves: Infinity });
     w.enemyAi = null;
     w.time = constants.AGGRO_BLOCK_UNTIL;
     const hero = w.player;
@@ -627,7 +630,7 @@ const results = await page.evaluate(async () => {
     // and starts it. A tower answers to its own cooldown, and only for a unit
     // of yours nearer to it than you.
     const { runCreepAi } = await import('/src/sim/ai/creepAi.ts');
-    const w = new World({ ...DEFAULT_CONFIG, seed: 23, enemyHero: false, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, seed: 23, enemyHero: false, waves: Infinity });
     const hero = w.player;
     const all = [...w.units.values()];
     const hitter = all.find((u) => u.team === 'dire' && u.kind === 'melee_creep');
@@ -679,7 +682,7 @@ const results = await page.evaluate(async () => {
 
   {
     // Attack range runs edge to edge: authored range plus both hulls.
-    const w = new World({ ...DEFAULT_CONFIG, seed: 20, enemyHero: false, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, seed: 20, enemyHero: false, waves: Infinity });
     const hero = w.player;
     const all = [...w.units.values()];
     const creep = all.find((u) => u.team === 'dire' && u.kind === 'melee_creep');
@@ -696,7 +699,7 @@ const results = await page.evaluate(async () => {
 
   {
     // Siege creeps join every 10th wave from 5:00, which is the 11th to leave.
-    const w = new World({ ...DEFAULT_CONFIG, seed: 22, enemyHero: false, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, seed: 22, enemyHero: false, waves: Infinity });
     const sieges = () => [...w.units.values()].filter((u) => u.kind === 'siege_creep').length;
     const spawn = (wave) => {
       w.waveCount = wave - 1;
@@ -711,7 +714,7 @@ const results = await page.evaluate(async () => {
 
   {
     // Siege creeps are built for buildings and rank a tower above anything else.
-    const w = new World({ ...DEFAULT_CONFIG, seed: 15, enemyHero: false, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, seed: 15, enemyHero: false, waves: Infinity });
     const tower = [...w.units.values()].find((u) => u.kind === 'tower' && u.team === 'dire');
     const siegeTpl = units.SIEGE_CREEP;
     const { spawnUnit } = units;
@@ -726,7 +729,7 @@ const results = await page.evaluate(async () => {
   {
     // Contact behaviour. Nothing shoves anything in Dota: a creep walking into
     // a hero goes around him, and he does not give an inch.
-    const w = new World({ ...DEFAULT_CONFIG, heroId: 'swordmaster', seed: 31, enemyHero: false, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, heroId: 'swordmaster', seed: 31, enemyHero: false, waves: Infinity });
     const hero = w.player;
     const creep = [...w.units.values()].find((u) => u.team === 'radiant' && u.kind === 'melee_creep');
     w.units.clear();
@@ -754,7 +757,7 @@ const results = await page.evaluate(async () => {
   {
     // And the other way round: a hero ordered through a creep does not move it,
     // and a line of bodies across the lane stops him dead.
-    const w = new World({ ...DEFAULT_CONFIG, heroId: 'swordmaster', seed: 31, enemyHero: false, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, heroId: 'swordmaster', seed: 31, enemyHero: false, waves: Infinity });
     const hero = w.player;
     const all = [...w.units.values()];
     const mine = all.find((u) => u.team === 'radiant' && u.kind === 'melee_creep');
@@ -794,9 +797,56 @@ const results = await page.evaluate(async () => {
     check('a hero is bodyblocked by a line of creeps', hero.pos.x < 2200, true);
   }
 
+  // Stride reversals: steps that point back against the one before. A creep
+  // walking round something turns gradually and never reverses, so a count
+  // in the hundreds is one shuddering in place.
+  const reversals = (w, seconds, only) => {
+    const last = new Map();
+    let n = 0;
+    for (let i = 0; i < seconds * 120; i++) {
+      w.step(STEP);
+      for (const u of w.units.values()) {
+        if (!u.alive || u.kind === 'hero' || u.kind === 'tower' || (only && u !== only)) continue;
+        const p = last.get(u.id);
+        const m = p ? { x: u.pos.x - p.x, y: u.pos.y - p.y } : null;
+        const moved = m && Math.hypot(m.x, m.y) > 1e-6;
+        if (moved && p.m && m.x * p.m.x + m.y * p.m.y < 0) n++;
+        last.set(u.id, { x: u.pos.x, y: u.pos.y, m: moved ? m : p?.m });
+      }
+    }
+    return n;
+  };
+
+  {
+    // A creep whose straight way in is walled off by two friends shoulder to
+    // shoulder. Sliding off one into the other used to leave a step pointing
+    // straight back, taken at full stride and undone the next frame, over
+    // and over, and the creep never got there.
+    const w = new World({ ...DEFAULT_CONFIG, seed: 31, enemyHero: false, waves: Infinity });
+    w.units.clear();
+    const put = (team, x, y, still) => {
+      const u = units.spawnUnit(units.MELEE_CREEP, team, { x, y }, w.rng);
+      if (still) u.moveSpeed = 0;
+      w.units.set(u.id, u);
+      return u;
+    };
+    const foe = put('dire', 3000, 0, true);
+    put('radiant', 2904, 0, true);
+    put('radiant', 2904, 52, true);
+    const late = put('radiant', 2800, 20, false);
+    check('a creep behind its wave does not shudder', reversals(w, 1.5, late), 0);
+    check('it walks round its wave into range', w.inAttackRange(late, foe), true);
+  }
+
+  {
+    const w = new World({ ...DEFAULT_CONFIG, seed: 99, waves: Infinity });
+    // Hundreds to thousands a minute before the fix.
+    check('creeps in a busy lane do not shudder', reversals(w, 60) < 20, true);
+  }
+
   {
     // Separation invariant: nothing should end a busy lane inside anything else.
-    const w = new World({ ...DEFAULT_CONFIG, seed: 44, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, seed: 44, waves: Infinity });
     settle(w, 60);
     let worst = 0;
     const alive = w.aliveUnits();
@@ -813,10 +863,76 @@ const results = await page.evaluate(async () => {
     check('units do not end up stacked', worst < 1, true);
   }
 
+  // --- Drill length: a number of waves, farmed out --------------------------
+  {
+    const w = new World({ ...DEFAULT_CONFIG, seed: 21, enemyHero: false, waves: 2 });
+    let lastCreep = 0;
+    for (let i = 0; i < 120 * 300 && !w.finished; i++) {
+      w.step(1 / 120);
+      if ([...w.units.values()].some((u) => u.alive && u.kind !== 'hero' && u.kind !== 'tower')) lastCreep = w.time;
+    }
+    check('a two-wave drill ends', w.finished, true);
+    check('no third wave spawns', w.waveCount, 2);
+    // Not on the clock: the second wave is fought out before the run ends.
+    check('the run ends the step the last creep dies', Math.abs(w.time - lastCreep) <= 1 / 120 + 1e-9, true);
+  }
+
+  // --- Lane audio: which events become which sounds -----------------------
+  // The laning AI plays your side for three minutes against the bot, and a
+  // mixer that only counts stands in for Web Audio, so this checks the wiring
+  // and not the speakers. Nothing but a person checks the mix.
+  {
+    const { LaneAudio } = await import('/src/audio/laneAudio.ts');
+    const { EnemyHeroAi } = await import('/src/sim/ai/enemyHeroAi.ts');
+    const { ENEMY_PROFILES } = await import('/src/sim/config.ts');
+    const plays = {};
+    const offsets = [];
+    const mixer = {
+      play: (name, opts = {}) => {
+        plays[name] = (plays[name] ?? 0) + 1;
+        // With the wind-up it was timed against, which shortens as the archer
+        // levels and gains agility.
+        if (name === 'bow_draw') {
+          const windup = constants.attackPointTime(w.player.attackPoint, w.player.attackSpeedBonus);
+          offsets.push({ offset: opts.offset ?? 0, windup });
+        }
+        return { stop() {} };
+      },
+      duck() {},
+    };
+    const w = new World({ ...DEFAULT_CONFIG, heroId: 'frost_archer', enemyHero: true, enemyHeroId: 'swordmaster', seed: 21, waves: Infinity });
+    const audio = new LaneAudio(mixer, () => ({ x: 0, onScreen: true }));
+    audio.reset(w);
+    const me = new EnemyHeroAi(w.player, ENEMY_PROFILES[3]);
+    // Two sim steps to a drawn frame, as a 60 Hz display runs it.
+    for (let i = 0; i < 180 * 120; i++) {
+      if (w.player.alive) me.update(w, STEP);
+      w.step(STEP);
+      if (i % 2) audio.update(w);
+    }
+    check('lane audio: a coin for every last hit', plays.last_hit_gold ?? 0, w.stats.lastHits);
+    check('lane audio: a deny sound for every deny', plays.deny ?? 0, w.stats.denies);
+    check('lane audio: the drill had last hits to count', w.stats.lastHits > 0, true);
+    check('lane audio: creep hits play', (plays.melee_creep_hit ?? 0) > 0, true);
+    check('lane audio: ranged creeps cast', (plays.ranged_creep_cast ?? 0) > 0, true);
+    check('lane audio: the archer draws', (plays.bow_draw ?? 0) > 0, true);
+    check('lane audio: the archer releases', (plays.bow_release ?? 0) > 0, true);
+    check('lane audio: the bot swings', (plays.sword_swing ?? 0) > 0, true);
+    // The archer's windup is 0.403 s at level 1, so the draw starts 0.047 s
+    // in (plus up to a frame already gone when it is seen) and ends on the
+    // release; a level later the windup is shorter and the offset longer.
+    check(
+      'lane audio: the draw is offset to end on the release',
+      offsets.every(({ offset, windup }) => offset >= 0.45 - windup - 1e-9 && offset <= 0.45 - windup + 2 * STEP + 1e-9),
+      true,
+    );
+    check('lane audio: the archer levelled during it', w.player.level > 1, true);
+  }
+
   // --- Determinism: same seed, same lane ----------------------------------
   {
     const run = () => {
-      const w = new World({ ...DEFAULT_CONFIG, seed: 99, duration: 120 });
+      const w = new World({ ...DEFAULT_CONFIG, seed: 99, waves: 4 });
       for (let i = 0; i < 120 * 30; i++) w.step(1 / 120);
       return JSON.stringify(w.stats) + '|' + w.killLog.length;
     };
@@ -835,19 +951,45 @@ const results = await page.evaluate(async () => {
 // start() needs the renderer, which boot() builds only once every model has
 // loaded; the loading screen comes down at that point.
 await page.waitForFunction(() => !document.querySelector('.loading'), null, { timeout: 60000 });
+// The menu's backdrop lane is a real World, and it has been running behind the
+// menu all this time. It must not have made a sound.
+await page.waitForTimeout(1000);
+const menuPlays = await page.evaluate(() => window.__lht.audioStats());
+results.push({
+  name: 'the menu backdrop plays no lane sounds',
+  ok: Object.keys(menuPlays).every((n) => n === 'ui_click'),
+  actual: JSON.stringify(menuPlays),
+  expected: '{}',
+});
 await page.evaluate(() => {
   window.__lht.start({
     heroId: 'frost_archer',
-    duration: 600,
+    waves: 20,
     deniesEnabled: true,
     enemyHero: false,
     enemyHeroId: 'swordmaster',
     enemyDifficulty: 3,
     aggroEnabled: true,
     seed: 4242,
+    items: [],
   });
 });
 await page.waitForTimeout(2500);
+
+// And a real drill does make them: the seeded lane starts in combat.
+const drillPlays = await page.evaluate(() => window.__lht.audioStats());
+results.push({
+  name: 'a running drill plays creep hits',
+  ok: (drillPlays.melee_creep_hit ?? 0) > 0,
+  actual: JSON.stringify(drillPlays),
+  expected: 'melee_creep_hit > 0',
+});
+results.push({
+  name: 'a run opens with the horn and the ambience',
+  ok: drillPlays.horn === 1 && drillPlays.lane_ambience === 1,
+  actual: `horn ${drillPlays.horn}, ambience ${drillPlays.lane_ambience}`,
+  expected: 'horn 1, ambience 1',
+});
 
 const aim = await page.evaluate(() => {
   const w = window.__lht.world;
@@ -893,6 +1035,12 @@ if (!aim) {
     expected: '{"target":null,"moving":true}',
   });
 }
+
+const endPlays = await page.evaluate(() => {
+  window.__lht.finish();
+  return window.__lht.audioStats();
+});
+results.push({ name: 'the results screen plays run_end', ok: endPlays.run_end === 1, actual: endPlays.run_end, expected: 1 });
 
 await browser.close();
 

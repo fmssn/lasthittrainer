@@ -7,18 +7,30 @@ import { Input } from './input.ts';
 import { Hud } from './ui/hud.ts';
 import { Menu } from './ui/menu.ts';
 import { Results } from './ui/results.ts';
+import { Mixer, type Voice } from './audio/mixer.ts';
+import { LaneAudio } from './audio/laneAudio.ts';
+import { loadMuted, saveMuted } from './audio/settings.ts';
 
 /**
- * Where a model under public/ comes from.
+ * Where a file under public/ comes from.
  *
  * The single-file build (`npm run pack`) has nowhere to fetch a file from — the
  * whole app is one HTML document, and the strict CSP it is published under
- * blocks the request anyway — so it injects every GLB as a `data:` URL on this
- * global, keyed by its path under public/. The loaders already know to parse a
- * data: URL rather than fetch one, which is the only reason that path exists.
+ * blocks the request anyway — so it injects every GLB and sound as a `data:`
+ * URL on this global, keyed by its path under public/. The loaders already know
+ * to parse a data: URL rather than fetch one, which is the only reason that
+ * path exists.
  */
 const INLINED = (window as unknown as { __LHT_MODELS__?: Record<string, string> }).__LHT_MODELS__;
 const modelUrl = (path: string) => INLINED?.[path] ?? `${import.meta.env.BASE_URL}${path}`;
+
+// Sound is not a startup dependency: it loads beside the models and a file
+// that fails only leaves its sound silent.
+const mixer = new Mixer(modelUrl);
+void mixer.load();
+mixer.setMuted(loadMuted());
+/** The loop under a running drill, so the end of the run can fade it. */
+let ambience: Voice | null = null;
 
 const SIM_STEP = 1 / 120;
 const MAX_CATCHUP = 0.25;
@@ -36,6 +48,7 @@ const overlay = document.getElementById('overlay') as HTMLDivElement;
 // underneath it and it stays transparent on top, so input never changes hands.
 let renderer: Renderer3D;
 let input: Input;
+let laneAudio: LaneAudio;
 const hud = new Hud(overlay);
 
 let state: State = 'menu';
@@ -43,6 +56,18 @@ let world: World | null = null;
 let lastConfig: DrillConfig | null = null;
 let accumulator = 0;
 let lastFrame = performance.now();
+
+// Every button on the overlay clicks, menu, pause and results alike. A click is
+// also the user gesture browsers want before they let audio start at all.
+overlay.addEventListener(
+  'click',
+  (e) => {
+    if (!(e.target instanceof Element) || !e.target.closest('button')) return;
+    mixer.resume();
+    mixer.play('ui_click');
+  },
+  true,
+);
 
 const menu = new Menu(overlay, (config) => start(config));
 const results = new Results(
@@ -85,9 +110,19 @@ async function boot() {
 
   renderer = new Renderer3D(app, canvas, assets);
   input = new Input(canvas, renderer);
+  laneAudio = new LaneAudio(mixer, (p) => {
+    const s = renderer.toScreen(p, 50);
+    const w = canvas.clientWidth || 1;
+    const h = canvas.clientHeight || 1;
+    return { x: (s.x / w) * 2 - 1, onScreen: s.x >= 0 && s.x <= w && s.y >= 0 && s.y <= h };
+  });
   input.onPause = () => {
     if (state === 'playing') setPaused(true);
     else if (state === 'paused') setPaused(false);
+  };
+  input.onMute = () => {
+    mixer.setMuted(!mixer.isMuted());
+    saveMuted(mixer.isMuted());
   };
 
   menu.show();
@@ -112,9 +147,12 @@ pauseScreen.querySelector('[data-end]')?.addEventListener('click', () => finish(
 pauseScreen.querySelector('[data-quit]')?.addEventListener('click', () => toMenu());
 
 // A backgrounded tab throttles requestAnimationFrame, which would otherwise
-// turn the drill into slow motion instead of stopping it.
+// turn the drill into slow motion instead of stopping it. The sound stops with
+// it, and comes back with the tab unless the drill is still paused.
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && state === 'playing') setPaused(true);
+  if (document.hidden) mixer.suspend();
+  else if (state !== 'paused') mixer.resume();
 });
 
 function start(config: DrillConfig) {
@@ -123,6 +161,15 @@ function start(config: DrillConfig) {
   renderer.snap(world.player.pos);
   renderer.cursor = { ...world.player.pos };
   input.attach(world);
+  // Only what a previous run left behind: a blanket stop would also cut the
+  // click of the button that started this one.
+  mixer.stop('lane_ambience');
+  mixer.stop('run_end');
+  mixer.resume();
+  laneAudio.reset(world);
+  // Dota's 0:00 horn, and the forest the drill runs in.
+  mixer.play('horn');
+  ambience = mixer.play('lane_ambience');
   menu.hide();
   results.hide();
   pauseScreen.hidden = true;
@@ -137,6 +184,10 @@ function setPaused(paused: boolean) {
   state = paused ? 'paused' : 'playing';
   pauseScreen.hidden = !paused;
   lastFrame = performance.now();
+  // Suspending the context freezes what is already playing too, so a swing
+  // that was mid-air does not ring out over the pause screen.
+  if (paused) mixer.suspend();
+  else mixer.resume();
 }
 
 function finish() {
@@ -144,12 +195,17 @@ function finish() {
   pauseScreen.hidden = true;
   hud.hide();
   input.attach(null);
-  results.show(lastConfig, world.stats);
+  ambience?.stop(1);
+  ambience = null;
+  mixer.play('run_end');
+  results.show(lastConfig, world.stats, world.time);
   state = 'results';
 }
 
 function toMenu() {
   world = null;
+  mixer.stop();
+  ambience = null;
   input.attach(null);
   hud.hide();
   results.hide();
@@ -171,6 +227,7 @@ function frame(now: number) {
     // Lead the camera toward the enemy side; that is where the creeps you are
     // farming always are.
     renderer.follow(world.player.pos, elapsed, CAMERA_LEAD);
+    laneAudio.update(world);
     hud.update(world);
     if (world.finished) finish();
   }
@@ -187,7 +244,7 @@ function frame(now: number) {
 let backdrop: World | null = null;
 function emptyWorld(): World {
   if (!backdrop) {
-    backdrop = new World({ ...menu.config, enemyHero: false, duration: 1e9, seed: 1234 });
+    backdrop = new World({ ...menu.config, enemyHero: false, waves: Infinity, seed: 1234 });
     for (let i = 0; i < 240; i++) backdrop.step(SIM_STEP);
     renderer.snap(backdrop.player.pos);
   }
@@ -210,5 +267,7 @@ if (import.meta.env.DEV) {
     renderStats: () => renderer.stats(),
     /** Screen position of a sim point, so a harness can click on a unit. */
     toScreen: (p: { x: number; y: number }, up = 0) => renderer.toScreen(p, up),
+    /** Plays requested per sound, audible or not, for the audio checks in tools/. */
+    audioStats: () => ({ ...mixer.counts }),
   };
 }
