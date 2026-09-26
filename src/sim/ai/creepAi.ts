@@ -20,7 +20,8 @@ import { dist } from '../math.ts';
  *   1. forced aggro from a hero's attack order
  *   2. the current target, while it is alive and in attack range
  *   3. the best unit type already inside attack range
- *   4. the nearest enemy inside acquisition range — walk at it
+ *   4. inside acquisition range, what it is already walking at, else the
+ *      nearest — walk at it
  *   5. nothing: march down the lane
  */
 export function runCreepAi(world: World, creep: Unit) {
@@ -54,9 +55,16 @@ export function runCreepAi(world: World, creep: Unit) {
     return;
   }
 
+  // Walking at something is sticky too. Re-picking the nearest every frame
+  // flipped between two enemies at about the same distance, since each step
+  // towards one left the other the closer, and the creep swayed on the spot.
   const acquired = nearestInAcquisition(world, creep);
   if (acquired) {
-    creep.attackTargetId = acquired.id;
+    const keep =
+      current &&
+      dist(creep.pos, current.pos) <= acquisitionRange(creep.kind) &&
+      priority(creep, current) >= priority(creep, acquired);
+    creep.attackTargetId = keep ? current.id : acquired.id;
     creep.moveTarget = null;
     return;
   }

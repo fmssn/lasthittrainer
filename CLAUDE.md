@@ -75,11 +75,12 @@ table is the opponent. It is a measurement, not a pass/fail, and it catches the
 one class of bug nothing else here can: a side bias. A lane where Radiant
 quietly farms better than Dire would flatter you for three minutes and teach
 you nothing, and staring at the code does not find it. Current reading, with
-the Frost Archer on both sides — level 3 against level 3 comes out 5.3 to
-10.3 last hits, gap 5.0, and the ladder runs 1.7 -> 5.0 -> 10.3 -> 12.7 ->
-15.0. That gap is open, not accepted: three seeds exaggerate it, but over
-twelve it is still 5.3 to 7.5 (Swordmaster mirror 4.1 to 5.5) with Dire ahead
-in most seeds, so the lane leans Dire. Before the roster was cut the harness
+the Frost Archer on both sides — level 3 against level 3 comes out 7.0 to
+9.0 last hits, gap 2.0, and the ladder runs 1.7 -> 5.0 -> 9.0 -> 12.7 ->
+14.0. That gap is open, not accepted: over seeds 1-12 it is 5.3 to 8.8, gap
+3.4, exactly what those seeds gave before creeps learned to walk round their
+own wave (an earlier twelve-seed Swordmaster mirror read 4.1 to 5.5), with
+Dire ahead in most seeds, so the lane leans Dire. Before the roster was cut the harness
 mirrored a hero no longer in it, which read 0.0 on the same seeds. Re-run it
 after touching creep AI, the bot, or anything in the combat path.
 
@@ -184,6 +185,14 @@ tools/blender/    build_units.py builds the KayKit creeps in public/models/units
   makes bodyblocking possible. Bodies meet at `bodyRadius(kind)`, which
   follows the drawn rigs and is wider than Valve's hulls; `Unit.radius` stays
   the hull, because attack range is measured to it.
+- A slide runs along a body but never back: a step deflected off two bodies
+  can point away from the goal, and taking it made a creep shudder in the
+  back of its own wave, forward into the pocket and out again every frame.
+  A unit walking into range heads for a free spot on the ring round its
+  target (`World.standSpot`), preferring one it can walk to in a line, and
+  keeps it in `Unit.chaseSpot` until a body takes it. Choosing afresh every
+  frame flip-flopped between spots in the same way. Both are covered by a
+  stride-reversal count in `npm run check`.
 
 ### Performance
 
