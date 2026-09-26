@@ -383,14 +383,13 @@ export class World {
   step(dt: number) {
     if (this.finished) return;
     this.time += dt;
-    if (this.time >= this.config.duration) {
-      this.finished = true;
-    }
 
-    this.waveTimer -= dt;
-    if (this.waveTimer <= 0) {
-      this.waveTimer += WAVE_INTERVAL;
-      this.spawnWave(RADIANT_SPAWN, DIRE_SPAWN);
+    if (this.waveCount < this.config.waves) {
+      this.waveTimer -= dt;
+      if (this.waveTimer <= 0) {
+        this.waveTimer += WAVE_INTERVAL;
+        this.spawnWave(RADIANT_SPAWN, DIRE_SPAWN);
+      }
     }
 
     if (!this.player.alive) {
@@ -427,6 +426,15 @@ export class World {
     this.updateFloaters(dt);
     this.separate();
     this.reap();
+
+    // Towers shoot whatever outlives the other side's wave, so the lane always
+    // empties once spawning stops.
+    if (this.waveCount >= this.config.waves && !this.creepsAlive()) this.finished = true;
+  }
+
+  private creepsAlive(): boolean {
+    for (const u of this.units.values()) if (u.alive && u.kind !== 'hero' && u.kind !== 'tower') return true;
+    return false;
   }
 
   // --------------------------------------------------------------- movement

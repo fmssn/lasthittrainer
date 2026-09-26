@@ -11,6 +11,13 @@ export interface RunRecord {
   heroId: string;
   /** Absent on runs recorded before starting items existed, which had none. */
   items?: ItemId[];
+  /**
+   * Absent on runs recorded when a drill was a number of minutes. Those ended
+   * on the clock with a wave still fighting, so they are no baseline for a run
+   * that farms every wave out.
+   */
+  waves?: number;
+  /** Seconds the run lasted. */
   duration: number;
   enemyHero: boolean;
   enemyDifficulty: number;
@@ -28,14 +35,15 @@ export interface RunRecord {
   denyRate: number;
 }
 
-export function buildRecord(config: DrillConfig, stats: Stats): RunRecord {
+export function buildRecord(config: DrillConfig, stats: Stats, duration: number): RunRecord {
   const possibleLh = stats.lastHits + stats.missed;
   const possibleDn = stats.denies + stats.conceded;
   return {
     at: Date.now(),
     heroId: config.heroId,
     items: [...config.items],
-    duration: config.duration,
+    waves: config.waves,
+    duration,
     enemyHero: config.enemyHero,
     enemyDifficulty: config.enemyDifficulty,
     deniesEnabled: config.deniesEnabled,
@@ -93,7 +101,7 @@ export function personalBest(runs: RunRecord[], run: RunRecord): RunRecord | nul
       r !== run &&
       r.heroId === run.heroId &&
       loadoutKey(r.items) === loadoutKey(run.items) &&
-      r.duration === run.duration &&
+      r.waves === run.waves &&
       r.enemyHero === run.enemyHero &&
       r.enemyDifficulty === run.enemyDifficulty,
   );

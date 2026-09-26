@@ -144,7 +144,7 @@ function finish() {
   pauseScreen.hidden = true;
   hud.hide();
   input.attach(null);
-  results.show(lastConfig, world.stats);
+  results.show(lastConfig, world.stats, world.time);
   state = 'results';
 }
 
@@ -187,7 +187,7 @@ function frame(now: number) {
 let backdrop: World | null = null;
 function emptyWorld(): World {
   if (!backdrop) {
-    backdrop = new World({ ...menu.config, enemyHero: false, duration: 1e9, seed: 1234 });
+    backdrop = new World({ ...menu.config, enemyHero: false, waves: Infinity, seed: 1234 });
     for (let i = 0; i < 240; i++) backdrop.step(SIM_STEP);
     renderer.snap(backdrop.player.pos);
   }

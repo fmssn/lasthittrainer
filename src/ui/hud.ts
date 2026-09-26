@@ -76,8 +76,10 @@ export class Hud {
     const possible = s.lastHits + s.missed;
     this.q('data-acc').textContent = possible > 0 ? `${Math.round((s.lastHits / possible) * 100)}%` : '—';
 
-    this.q('data-clock').textContent = fmtTime(world.config.duration - world.time);
-    this.q('data-wave').textContent = `next wave ${fmtTime(world.waveTimer)}`;
+    const { waves } = world.config;
+    this.q('data-clock').textContent = `${world.waveCount} / ${waves}`;
+    this.q('data-wave').textContent =
+      world.waveCount < waves ? `wave · next in ${fmtTime(world.waveTimer)}` : 'last wave';
 
     const panel = this.q('data-enemy-panel');
     if (world.enemy) {
