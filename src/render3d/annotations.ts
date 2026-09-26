@@ -30,6 +30,7 @@ const COLORS = {
   sheen: 'rgba(255,255,255,0.22)',
   /** Dota outlines the bar under the cursor too (`dota_hud_healthbar_hoveroutline_alpha`). */
   hover: 'rgba(255,255,255,0.78)',
+  levelUp: '#f2c94c',
 };
 
 /** Bar geometry in screen pixels, per unit class. */
@@ -45,6 +46,15 @@ const BAR = {
  */
 const HP_PER_MARKER = 250;
 const MARKERS_PER_MAJOR = 4;
+
+/** The level plate on the right end of a hero bar, in screen pixels. */
+const LEVEL_PLATE = 13;
+/**
+ * Seconds the plate stays lit after a level-up. Dota marks one with a gold burst
+ * on the hero; a number that changes silently mid-swing is easy to miss, and
+ * it is the moment your damage goes up.
+ */
+const LEVEL_FLASH = 1.2;
 
 /**
  * The hurt chunk: when a unit takes damage, what it just lost stays on the bar
@@ -89,6 +99,8 @@ export class Annotations {
   private readonly hurt = new Map<number, Hurt>();
   private hurtWorld: World | null = null;
   private hurtClock = 0;
+  /** Level last drawn, and seconds of level-up flash left, by hero id. */
+  private readonly levels = new Map<number, { level: number; flash: number }>();
 
   constructor(
     container: HTMLElement,
@@ -186,7 +198,7 @@ export class Annotations {
     alive.sort((a, b) => depth.get(a.id)! - depth.get(b.id)!);
     for (const u of alive) {
       if (u.aggroTimer > 0) this.drawAggro(u);
-      if (u.kind !== 'tower') this.drawHealthBar(u, hoverId, this.hurtEdge(u, dt));
+      if (u.kind !== 'tower') this.drawHealthBar(u, hoverId, this.hurtEdge(u, dt), dt);
     }
     this.drawFloaters(world);
 
@@ -200,6 +212,7 @@ export class Annotations {
     if (world !== this.hurtWorld) {
       // A new run reuses unit ids, so nothing carries over.
       this.hurt.clear();
+      this.levels.clear();
       this.hurtWorld = world;
       this.hurtClock = world.time;
     }
@@ -233,7 +246,7 @@ export class Annotations {
     return s.hp;
   }
 
-  private drawHealthBar(u: Unit, hoverId: number | null, hurtHp: number) {
+  private drawHealthBar(u: Unit, hoverId: number | null, hurtHp: number, dt: number) {
     const ctx = this.ctx;
     const head = this.project(u.pos, healthBarHeight(u));
     if (this.behind()) return;
@@ -274,11 +287,45 @@ export class Annotations {
         const mx = edge(hp);
         this.span(mx - (major ? 1 : 0), y, mx + 1, y + h);
       }
+      this.drawLevel(u, x + w + 1, y + h / 2, dt);
     }
 
     if (hoverId === u.id) {
       this.label(`${Math.ceil(u.hp)} / ${Math.round(u.maxHp)}`, head.x, y - 7, COLORS.text, 11);
     }
+  }
+
+  /** A hero's level, on a plate against the right end of its bar, where Dota puts it. */
+  private drawLevel(u: Unit, barRight: number, midY: number, dt: number) {
+    let s = this.levels.get(u.id);
+    if (!s) {
+      s = { level: u.level, flash: 0 };
+      this.levels.set(u.id, s);
+    }
+    if (u.level > s.level) s.flash = LEVEL_FLASH;
+    s.level = u.level;
+    s.flash = Math.max(0, s.flash - dt);
+
+    const ctx = this.ctx;
+    const x0 = barRight;
+    const x1 = x0 + LEVEL_PLATE;
+    const y0 = midY - LEVEL_PLATE / 2;
+    const y1 = y0 + LEVEL_PLATE;
+    ctx.fillStyle = COLORS.shadow;
+    this.span(x0, y0, x1, y1);
+    const lit = s.flash / LEVEL_FLASH;
+    if (lit > 0) {
+      ctx.globalAlpha = lit;
+      ctx.fillStyle = COLORS.levelUp;
+      this.ring(x0, y0, x1, y1, 1);
+      ctx.globalAlpha = 1;
+    }
+    ctx.font = '700 11px "Barlow Condensed", Barlow, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = lit > 0 ? COLORS.levelUp : COLORS.text;
+    ctx.fillText(String(u.level), (x0 + x1) / 2, (y0 + y1) / 2 + 0.5);
+    ctx.textBaseline = 'alphabetic';
   }
 
   // ------------------------------------------------------------------- aggro

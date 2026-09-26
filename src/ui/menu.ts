@@ -1,5 +1,5 @@
 import { HEROES, canonicalHeroId, heroById } from '../sim/heroes.ts';
-import { DEFAULT_CONFIG, type DrillConfig } from '../sim/config.ts';
+import { DEFAULT_CONFIG, DIFFICULTY_NAMES, type DrillConfig } from '../sim/config.ts';
 import { attackInterval, attackPointTime } from '../sim/constants.ts';
 import {
   ITEMS,
@@ -18,7 +18,6 @@ import { itemIconUrl } from './itemIcons.ts';
 
 /** Two waves a minute, so these are the 1, 2, 3 and 5 minute drills there used to be. */
 const WAVE_COUNTS = [2, 4, 6, 10];
-const DIFFICULTY_NAMES = ['', 'Sloppy', 'Casual', 'Decent', 'Strong', 'Scripted'];
 
 function pips(n: number): string {
   return Array.from({ length: 5 }, (_, i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('');
@@ -189,7 +188,7 @@ export class Menu {
                 <span class="layer-num">4</span><span>Creep aggro</span>
                 <input type="checkbox" data-toggle="aggroEnabled" ${c.aggroEnabled ? 'checked' : ''} />
               </div>
-              <p>Right-clicking the enemy hero pulls every enemy creep within 500 range onto you for 2.3s. Harass is not free.</p>
+              <p>Right-clicking the enemy hero pulls enemy creeps within 500 onto you for 2.3s, and once the 3s cooldown is up every swing at a hero draws them again. Clicking your own creep hands them back, cooldown permitting. Harass is not free.</p>
             </label>
           </div>
         </section>

@@ -9,7 +9,7 @@
  * That makes two things checkable that nothing else here can check:
  *
  *   - the ladder is monotonic, i.e. profile 1..5 actually get harder
- *   - the lane has no side bias, i.e. level 3 against level 3 comes out even
+ *   - the lane has no side bias, i.e. profile 3 against profile 3 comes out even
  *
  * The second is the one worth keeping. A drill where Radiant quietly farms
  * better than Dire would flatter you for three minutes and teach you nothing,
@@ -83,7 +83,7 @@ const rows = await page.evaluate(
 await browser.close();
 
 const f = (v) => v.toFixed(1).padStart(7);
-console.log(`${MINUTES} min, both sides driven by the level-3 AI, mean of ${SEEDS.length} seeds\n`);
+console.log(`${MINUTES} min, both sides driven by the profile-3 AI, mean of ${SEEDS.length} seeds\n`);
 console.log('opponent   yourLH   yourDN  theirLH  theirDN   deaths');
 for (const r of rows) {
   console.log(`       ${r.d}  ${f(r.plh)}  ${f(r.pdn)}  ${f(r.elh)}  ${f(r.edn)}  ${f(r.deaths)}`);
@@ -91,7 +91,7 @@ for (const r of rows) {
 
 const even = rows.find((r) => r.d === 3);
 const gap = Math.abs(even.plh - even.elh);
-console.log(`\nlevel 3 vs level 3 gap: ${gap.toFixed(1)} last hits (want ~0 — a bigger gap is side bias)`);
+console.log(`\nprofile 3 vs profile 3 gap: ${gap.toFixed(1)} last hits (want ~0 — a bigger gap is side bias)`);
 const ladder = rows.map((r) => r.elh);
 const monotonic = ladder.every((v, i) => i === 0 || v >= ladder[i - 1] - 0.5);
 console.log(`ladder ${monotonic ? 'is' : 'is NOT'} monotonic: ${ladder.map((v) => v.toFixed(1)).join(' -> ')}`);

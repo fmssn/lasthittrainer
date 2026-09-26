@@ -55,7 +55,7 @@ const results = await page.evaluate(async () => {
   check('melee attack point', melee.attackPoint, 0.467);
   check('melee BAT', melee.baseAttackTime, 1.0);
   check('melee bounty', `${melee.bountyMin}-${melee.bountyMax}`, '34-39');
-  check('melee xp', melee.xp, 57);
+  check('melee xp', melee.bountyXp, 57);
 
   const ranged = units.RANGED_CREEP;
   check('ranged hp', ranged.maxHp, 300);
@@ -64,7 +64,7 @@ const results = await page.evaluate(async () => {
   check('ranged dmg', `${ranged.damageMin}-${ranged.damageMax}`, '21-26');
   check('ranged attack point', ranged.attackPoint, 0.5);
   check('ranged projectile', ranged.projectileSpeed, 900);
-  check('ranged xp', ranged.xp, 69);
+  check('ranged xp', ranged.bountyXp, 69);
 
   const siege = units.SIEGE_CREEP;
   check('siege hp', siege.maxHp, 935);
@@ -100,10 +100,34 @@ const results = await page.evaluate(async () => {
   const archer = heroes.heroById('frost_archer');
   check('Archer damage', `${archer.damageMin}-${archer.damageMax}`, '51-58');
   check('Archer hp', archer.maxHp, 472);
-  check('Archer armor', archer.armor, 4.008, 0.001);
+  check('Archer armor', archer.armor, 4, 1e-9);
   check('Archer attack speed', archer.attackSpeedBonus, 24);
   check('Archer windup', constants.attackPointTime(archer.attackPoint, archer.attackSpeedBonus), 0.4032, 0.001);
   check('Archer interval', constants.attackInterval(archer.baseAttackTime, archer.attackSpeedBonus), 1.371, 0.001);
+
+  // --- Levels: the hero file's gains, once per level past the first -------
+  // Swordmaster 2.0 str / 2.8 agi a level, Frost Archer 1.9 / 2.8
+  // (AttributeStrengthGain, AttributeAgilityGain), used unrounded.
+  const sword3 = heroes.heroById('swordmaster', [], 3);
+  check('Swordmaster L3 hp', sword3.maxHp, 120 + 24 * 22, 1e-9);
+  check('Swordmaster L3 regen', sword3.hpRegen, 0.5 + 24 * 0.1, 1e-9);
+  check('Swordmaster L3 damage', sword3.damageMin, 22 + 37.6, 1e-9);
+  check('Swordmaster L3 attack speed', sword3.attackSpeedBonus, 10 + 37.6, 1e-9);
+  check('Swordmaster L3 armor', sword3.armor, 37.6 / 6, 1e-9);
+  const archer2 = heroes.heroById('frost_archer', [], 2);
+  check('Archer L2 hp', archer2.maxHp, 120 + 17.9 * 22, 1e-9);
+  check('Archer L2 damage', archer2.damageMax, 34 + 26.8, 1e-9);
+  check('level 1 is the spawn template', heroes.heroById('frost_archer', [], 1), archer);
+  check('items and levels stack', heroes.heroById('frost_archer', ['slippers'], 2).damageMin, 27 + 26.8 + 3, 1e-9);
+
+  // Experience per level, 7.32's table; one wave of creeps is level 2.
+  check('one wave is level 2', constants.levelForXp(3 * 57 + 69), 2);
+  check('239 xp is still level 1', constants.levelForXp(239), 1);
+  check('2440 xp is level 6', constants.levelForXp(2440), 6);
+  check('level 30 is the cap', constants.levelForXp(1e9), 30);
+  check('respawn at level 1', constants.respawnTime(1), 12);
+  check('respawn at level 5', constants.respawnTime(5), 24);
+  check('respawn past level 25', constants.respawnTime(30), 100);
 
   // Saved configs and run history still carry the ids from before the rename.
   check('old melee id resolves', heroes.canonicalHeroId('juggernaut'), 'swordmaster');
@@ -115,13 +139,13 @@ const results = await page.evaluate(async () => {
   const items = await import('/src/sim/items.ts');
   {
     // Two branches are +2 agility on the Swordmaster: +2 damage, +2 attack
-    // speed, +0.334 armor, +44 HP. Quell adds nothing to the listed damage —
+    // speed, +1/3 armor, +44 HP. Quell adds nothing to the listed damage —
     // it is creep-only.
     const j = heroes.heroById('swordmaster', ['quelling_blade', 'iron_branch', 'iron_branch']);
     check('Swordmaster+QB+2IB damage', `${j.damageMin}-${j.damageMax}`, '56-58');
     check('Swordmaster+QB+2IB attack speed', j.attackSpeedBonus, 44);
     check('Swordmaster+QB+2IB hp', j.maxHp, 604);
-    check('Swordmaster+QB+2IB armor', j.armor, sword.armor + 0.334, 0.001);
+    check('Swordmaster+QB+2IB armor', j.armor, sword.armor + 2 / 6, 1e-9);
     check('Swordmaster quell (melee)', j.creepDamageBonus, 8);
     check('Archer quell (ranged)', heroes.heroById('frost_archer', ['quelling_blade']).creepDamageBonus, 4);
     // Slippers are damage on an agility hero; a Mantle or Gauntlets are not.
@@ -181,18 +205,34 @@ const results = await page.evaluate(async () => {
     check('config without items', new World(legacy).player.damageMin, 54);
   }
 
-  // --- Melee creeps hit heroes for 25% less -------------------------------
+  // --- Attack classes: creep_irresolute, creep_piercing, creep_siege -------
   {
-    const w = new World({ ...DEFAULT_CONFIG, seed: 7, enemyHero: false });
-    const creep = [...w.units.values()].find((u) => u.kind === 'melee_creep');
-    const rangedCreep = [...w.units.values()].find((u) => u.kind === 'ranged_creep');
+    const w = new World({ ...DEFAULT_CONFIG, seed: 7, enemyHero: false, waves: Infinity });
+    const { spawnUnit } = units;
+    const at = { x: 3000, y: 0 };
+    const make = (tpl, team) => spawnUnit(tpl, team, at, w.rng);
     const hero = w.player;
-    const meleeToHero = w.expectedDamage(creep, hero);
-    const meleeRaw = ((creep.damageMin + creep.damageMax) / 2) * constants.armorMultiplier(hero.armor);
-    check('melee creep -25% vs hero', meleeToHero / meleeRaw, 0.75, 0.0001);
-    const rangedToHero = w.expectedDamage(rangedCreep, hero);
-    const rangedRaw = ((rangedCreep.damageMin + rangedCreep.damageMax) / 2) * constants.armorMultiplier(hero.armor);
-    check('ranged creep full vs hero', rangedToHero / rangedRaw, 1, 0.0001);
+    const melee = make(units.MELEE_CREEP, 'dire');
+    const ranged = make(units.RANGED_CREEP, 'dire');
+    const siege = make(units.SIEGE_CREEP, 'dire');
+    const tower = make(units.TOWER, 'dire');
+    const theirMelee = make(units.MELEE_CREEP, 'radiant');
+    const theirSiege = make(units.SIEGE_CREEP, 'radiant');
+    // Multiplier over average damage after armor, which is what is left.
+    const factor = (source, target) =>
+      w.expectedDamage(source, target) /
+      (((source.damageMin + source.damageMax) / 2) * constants.armorMultiplier(target.armor));
+    check('melee creep -25% vs hero', factor(melee, hero), 0.75, 1e-9);
+    check('melee creep full vs creep', factor(melee, theirMelee), 1, 1e-9);
+    check('melee creep -30% vs siege', factor(melee, theirSiege), 0.7, 1e-9);
+    check('ranged creep -50% vs hero', factor(ranged, hero), 0.5, 1e-9);
+    check('ranged creep +50% vs creep', factor(ranged, theirMelee), 1.5, 1e-9);
+    check('ranged creep 35% vs siege', factor(ranged, theirSiege), 0.35, 1e-9);
+    check('siege creep full vs hero', factor(siege, hero), 1, 1e-9);
+    check('siege creep 250% vs siege', factor(siege, theirSiege), 2.5, 1e-9);
+    check('tower full vs hero', factor(tower, hero), 1, 1e-9);
+    check('hero -50% vs siege', factor(hero, siege), 0.5, 1e-9);
+    check('hero full vs creep', factor(hero, melee), 1, 1e-9);
   }
 
   // --- Swing timing on an isolated pair -----------------------------------
@@ -288,11 +328,96 @@ const results = await page.evaluate(async () => {
     check('attack-move ignores allies', hero.attackTargetId, null);
   }
 
+  // --- Experience: shared by the enemy heroes near a death ----------------
+  {
+    const w = new World({ ...DEFAULT_CONFIG, heroId: 'swordmaster', enemyHeroId: 'swordmaster', seed: 21, waves: Infinity });
+    // Hold the bot still: this is about who gets paid, not about laning.
+    w.enemyAi = null;
+    const hero = w.player;
+    const bot = w.enemy;
+    const all = [...w.units.values()];
+    const theirs = all.filter((u) => u.team === 'dire' && u.kind === 'melee_creep');
+    const mine = all.filter((u) => u.team === 'radiant' && u.kind === 'melee_creep');
+    w.units.clear();
+    const place = (u, x, hp) => {
+      u.pos = { x, y: 0 };
+      u.hp = hp;
+      u.moveSpeed = 0;
+      u.moveTarget = null;
+      u.attackTargetId = null;
+      u.damageMin = u.damageMax = u.kind === 'hero' ? u.damageMin : 0;
+      w.units.set(u.id, u);
+    };
+    const until = (done, seconds = 2) => {
+      for (let i = 0; i < seconds * 120 && !done(); i++) w.step(STEP);
+    };
+    place(hero, 1000, hero.maxHp);
+    place(bot, 5000, bot.maxHp);
+
+    // A last hit pays the side that did not lose the creep.
+    const lastHit = theirs[0];
+    place(lastHit, 1100, 1);
+    w.orderAttack(hero, lastHit);
+    until(() => !lastHit.alive);
+    check('a last hit pays its xp', hero.experience, 57);
+    check('the losing side gets none', bot.experience, 0);
+    check('stats carry your xp', w.stats.experience, 57);
+
+    // A death more than 1500 away pays nobody, whoever landed the blow.
+    const far = theirs[1];
+    place(far, 3000, 1);
+    const killer = mine[0];
+    place(killer, 2910, killer.maxHp);
+    killer.damageMin = units.MELEE_CREEP.damageMin;
+    killer.damageMax = units.MELEE_CREEP.damageMax;
+    until(() => !far.alive);
+    check('a creep can kill a creep', far.alive, false);
+    check('out of range pays nothing', hero.experience, 57);
+
+    // A deny pays the other side half, and the denier nothing.
+    const denied = mine[1];
+    place(denied, 1100, 10);
+    bot.pos = { x: 2000, y: 0 };
+    w.orderAttack(hero, denied);
+    until(() => !denied.alive);
+    check('a deny pays the enemy half', bot.experience, Math.floor(57 * 0.5));
+    check('a deny pays the denier nothing', hero.experience, 57);
+
+    // Crossing 240 is level 2: more of everything, and health keeps its
+    // fraction instead of filling up.
+    hero.experience = 200;
+    hero.hp = hero.maxHp / 2;
+    const levelUp = theirs[2];
+    place(levelUp, 1100, 1);
+    w.orderAttack(hero, levelUp);
+    until(() => !levelUp.alive);
+    check('240 xp is level 2', hero.level, 2);
+    check('level 2 max hp', hero.maxHp, 560 + 2 * 22, 1e-9);
+    check('level 2 damage', hero.damageMin, 54 + 2.8, 1e-9);
+    check('a level-up is not a heal', hero.hp / hero.maxHp, 0.5, 0.01);
+
+    // A hero kill pays 100 + 13% of the victim's xp, and the respawn clock
+    // follows the victim's level.
+    place(bot, 1100, 1);
+    const before = hero.experience;
+    const worth = Math.floor(100 + 0.13 * bot.experience);
+    w.orderAttack(hero, bot);
+    until(() => !bot.alive);
+    check('a hero kill pays 100 + 13%', hero.experience - before, worth);
+    check('level 1 respawn', bot.phaseTimer, 12, 1e-9);
+    const executioner = { ...units.spawnUnit(units.MELEE_CREEP, 'dire', { x: 900, y: 0 }, w.rng), id: 9300 };
+    w.units.set(executioner.id, executioner);
+    hero.hp = 1;
+    until(() => !hero.alive);
+    check('level 2 respawn', w.playerRespawnTimer, 15, 1e-9);
+  }
+
   // --- Creep targeting and aggro ------------------------------------------
   const settle = (w, seconds) => { for (let i = 0; i < seconds * 120; i++) w.step(STEP); };
 
   {
-    // The rule the whole aggro layer rests on: creeps prefer other creeps, so a
+    // The rule the whole aggro layer rests on: creeps in a fight keep their
+    // targets, and when they pick again an idle hero is the lowest threat, so a
     // hero standing inside an engaged wave takes nothing.
     const w = new World({ ...DEFAULT_CONFIG, seed: 11, enemyHero: false, waves: Infinity });
     settle(w, 4); // let the waves meet and pair off
@@ -319,10 +444,11 @@ const results = await page.evaluate(async () => {
     check('attacking their hero pulls their creeps', pulled().length > 0, true);
     check('the pull puts the puller on cooldown', hero.aggroCooldown > 0, true);
 
-    // Clicking one of your own units hands the wave straight back.
+    // A pull cannot be handed straight back: the hand-back waits on the same
+    // cooldown the pull just started.
     const mine = [...w.units.values()].find((u) => u.team === 'radiant' && u.kind !== 'hero');
     w.orderAttack(hero, mine);
-    check('attacking your own unit gives aggro back', pulled().length, 0);
+    check('a pull cannot be handed straight back', pulled().length > 0, true);
   }
 
   {
@@ -356,14 +482,245 @@ const results = await page.evaluate(async () => {
   }
 
   {
+    // Picking again: unit type, then threat, then distance, over everything in
+    // acquisition range. Heroes and creeps share a type; siege creeps rank
+    // below both. Staged, with only the picking creep thinking.
+    const { runCreepAi } = await import('/src/sim/ai/creepAi.ts');
+    const { spawnUnit } = units;
+    const w = new World({ ...DEFAULT_CONFIG, heroId: 'swordmaster', seed: 16, enemyHero: false, waves: Infinity });
+    const hero = w.player;
+    // Explicit ids: after a hot reload the page can hold a second copy of
+    // units.ts whose counter would hand out ids the world already uses.
+    let nextId = 9100;
+    const at = (tpl, team, x) => {
+      const u = { ...spawnUnit(tpl, team, { x, y: 0 }, w.rng), id: nextId++ };
+      w.units.set(u.id, u);
+      return u;
+    };
+    w.units.clear();
+    w.units.set(hero.id, hero);
+    const picker = at(units.MELEE_CREEP, 'dire', 2000);
+    const ally = at(units.MELEE_CREEP, 'dire', 2600);
+    const fighter = at(units.MELEE_CREEP, 'radiant', 2300);
+    const pick = () => {
+      picker.attackTargetId = null;
+      runCreepAi(w, picker);
+      return picker.attackTargetId;
+    };
+    // The hero is inside the picker's attack range and nearer than the creep.
+    hero.pos = { x: 2110, y: 0 };
+    hero.attackTargetId = null;
+    fighter.attackTargetId = ally.id;
+    check('an idle hero loses to a creep in the fight', pick(), fighter.id);
+    hero.attackTargetId = ally.id;
+    check('a hero last hitting is fair game when nearest', pick(), hero.id);
+    fighter.attackTargetId = picker.id;
+    check('hitting the creep outranks hitting its allies', pick(), fighter.id);
+    const siege = at(units.SIEGE_CREEP, 'radiant', 2080);
+    siege.attackTargetId = picker.id;
+    hero.attackTargetId = null;
+    fighter.attackTargetId = null;
+    check('siege creeps rank below heroes and creeps', pick(), hero.id);
+    // No leash: with nothing else in reach it keeps after its target however
+    // far that has run.
+    w.units.delete(siege.id);
+    w.units.delete(fighter.id);
+    hero.pos = { x: 3500, y: 0 };
+    picker.attackTargetId = hero.id;
+    runCreepAi(w, picker);
+    check('no leash: it keeps chasing', picker.attackTargetId, hero.id);
+    w.units.set(fighter.id, fighter);
+    runCreepAi(w, picker);
+    check('until something turns up in range', picker.attackTargetId, fighter.id);
+  }
+
+  {
+    // Forced aggro reaches 500 from the ordering hero, whatever the creep:
+    // not a ranged creep's 600 acquisition range. Past 5:00, so the early-aggro
+    // block stays out of it.
+    const w = new World({ ...DEFAULT_CONFIG, seed: 17, enemyHero: true, waves: Infinity });
+    w.time = constants.AGGRO_BLOCK_UNTIL;
+    const hero = w.player;
+    const all = [...w.units.values()].filter((u) => u.team === 'dire' && u.kind === 'ranged_creep');
+    const near = all[0];
+    const far = { ...units.spawnUnit(units.RANGED_CREEP, 'dire', { x: 0, y: 0 }, w.rng), id: 9200 };
+    w.units.clear();
+    for (const u of [hero, w.enemy, near, far]) w.units.set(u.id, u);
+    hero.pos = { x: 2000, y: 0 };
+    near.pos = { x: 2450, y: 0 };
+    far.pos = { x: 2000, y: 550 };
+    w.orderAttack(hero, w.enemy);
+    check('aggro reaches a creep 450 away', near.aggroTargetId, hero.id);
+    check('aggro stops at 500', far.aggroTargetId, null);
+  }
+
+  {
+    // Before 5:00 a lane creep with nothing to fight, far from its own tower,
+    // ignores a pull (7.27). An enemy creep in its acquisition range lifts
+    // that, and so does being within 1550 of its own tier 1.
+    const w = new World({ ...DEFAULT_CONFIG, seed: 19, enemyHero: true, waves: Infinity });
+    const hero = w.player;
+    const all = [...w.units.values()];
+    const lone = all.find((u) => u.team === 'dire' && u.kind === 'melee_creep');
+    const company = all.find((u) => u.team === 'radiant' && u.kind === 'melee_creep');
+    const tower = all.find((u) => u.team === 'dire' && u.kind === 'tower');
+    w.units.clear();
+    for (const u of [hero, w.enemy, lone, tower]) w.units.set(u.id, u);
+    const pullAt = (x) => {
+      lone.aggroTargetId = null;
+      lone.aggroTimer = 0;
+      lone.pos = { x, y: 0 };
+      hero.pos = { x: x - 300, y: 0 };
+      hero.aggroCooldown = 0;
+      w.orderAttack(hero, w.enemy);
+      return lone.aggroTargetId;
+    };
+    check('before 5:00 a lone creep ignores a pull', pullAt(2300), null);
+    w.units.set(company.id, company);
+    company.pos = { x: 2150, y: 100 };
+    check('an enemy creep in range lifts the block', pullAt(2300), hero.id);
+    w.units.delete(company.id);
+    check('its own tower 1550 away lifts it', pullAt(tower.pos.x - 1300), hero.id);
+    w.time = constants.AGGRO_BLOCK_UNTIL;
+    check('the block ends at 5:00', pullAt(2300), hero.id);
+  }
+
+  {
+    // Every swing at a hero draws the creeps near the swinger, auto-attacks
+    // included, while the cooldown is ready. It forces no chase and starts no
+    // cooldown. Staged still: nothing but the hero's swing can move a target.
+    const w = new World({ ...DEFAULT_CONFIG, heroId: 'frost_archer', seed: 18, enemyHero: true, waves: Infinity });
+    w.enemyAi = null;
+    w.time = constants.AGGRO_BLOCK_UNTIL;
+    const hero = w.player;
+    const all = [...w.units.values()];
+    const theirs = all.find((u) => u.team === 'dire' && u.kind === 'melee_creep');
+    const mine = all.find((u) => u.team === 'radiant' && u.kind === 'melee_creep');
+    w.units.clear();
+    for (const u of [hero, w.enemy, theirs, mine]) {
+      u.moveSpeed = 0;
+      u.moveTarget = null;
+      w.units.set(u.id, u);
+    }
+    theirs.attackCooldown = mine.attackCooldown = 1e9;
+    hero.pos = { x: 2000, y: 0 };
+    w.enemy.pos = { x: 2500, y: 0 };
+    theirs.pos = { x: 2300, y: 0 };
+    mine.pos = { x: 2230, y: 0 };
+    const swingAtHero = (cooldown) => {
+      theirs.attackTargetId = mine.id;
+      hero.aggroCooldown = cooldown;
+      hero.phase = 'idle';
+      hero.attackCooldown = 0;
+      // Picked up on its own rather than ordered, so no pull runs.
+      hero.attackTargetId = w.enemy.id;
+      for (let i = 0; i < 120 && hero.phase !== 'windup'; i++) w.step(STEP);
+    };
+    swingAtHero(0);
+    check('a swing at a hero draws nearby creeps', theirs.attackTargetId, hero.id);
+    check('that draw forces no chase', theirs.aggroTimer, 0);
+    check('that draw starts no cooldown', hero.aggroCooldown, 0);
+    swingAtHero(2);
+    check('it waits while the cooldown runs', theirs.attackTargetId, mine.id);
+  }
+
+  {
+    // Handing aggro back: an attack order on your own unit makes what is
+    // hitting you pick again with you ranked last, once your cooldown is ready,
+    // and starts it. A tower answers to its own cooldown, and only for a unit
+    // of yours nearer to it than you.
+    const { runCreepAi } = await import('/src/sim/ai/creepAi.ts');
+    const w = new World({ ...DEFAULT_CONFIG, seed: 23, enemyHero: false, waves: Infinity });
+    const hero = w.player;
+    const all = [...w.units.values()];
+    const hitter = all.find((u) => u.team === 'dire' && u.kind === 'melee_creep');
+    const mine = all.filter((u) => u.team === 'radiant' && u.kind === 'melee_creep');
+    const tower = all.find((u) => u.team === 'dire' && u.kind === 'tower');
+    w.units.clear();
+    for (const u of [hero, hitter, tower]) w.units.set(u.id, u);
+    hero.pos = { x: 2000, y: 0 };
+    hitter.pos = { x: 2100, y: 0 };
+    const clickOwn = mine[0];
+    clickOwn.pos = { x: 1200, y: 0 };
+    w.units.set(clickOwn.id, clickOwn);
+
+    hitter.attackTargetId = hero.id;
+    hero.aggroCooldown = 1;
+    w.orderAttack(hero, clickOwn);
+    check('no hand-back while the cooldown runs', hitter.shunnedId, null);
+    hero.aggroCooldown = 0;
+    w.orderAttack(hero, clickOwn);
+    check('a hand-back marks the hero', hitter.shunnedId, hero.id);
+    check('a hand-back starts the cooldown', hero.aggroCooldown, constants.AGGRO_COOLDOWN);
+    const other = mine[1];
+    other.pos = { x: 2350, y: 0 };
+    w.units.set(other.id, other);
+    runCreepAi(w, hitter);
+    check('handed back, it picks something else', hitter.attackTargetId, other.id);
+    hitter.attackTargetId = hero.id;
+    hitter.shunnedId = hero.id;
+    w.units.delete(other.id);
+    runCreepAi(w, hitter);
+    check('with nothing else there it keeps you', hitter.attackTargetId, hero.id);
+
+    // The tower, 800 from the hero and shooting him.
+    hero.pos = { x: tower.pos.x - 800, y: tower.pos.y };
+    tower.attackTargetId = hero.id;
+    tower.phase = 'idle';
+    hero.aggroCooldown = 0;
+    w.orderAttack(hero, clickOwn);
+    check('a tower keeps you with no one of yours nearer', tower.shunnedId, null);
+    other.pos = { x: tower.pos.x - 500, y: tower.pos.y };
+    w.units.set(other.id, other);
+    hero.aggroCooldown = 5;
+    w.orderAttack(hero, clickOwn);
+    check('a tower lets go for a nearer unit of yours', tower.shunnedId, hero.id);
+    check('the tower starts its own cooldown', tower.aggroCooldown, constants.TOWER_DEAGGRO_COOLDOWN);
+    runCreepAi(w, tower);
+    check('the tower switches to it', tower.attackTargetId, other.id);
+  }
+
+  {
+    // Attack range runs edge to edge: authored range plus both hulls.
+    const w = new World({ ...DEFAULT_CONFIG, seed: 20, enemyHero: false, waves: Infinity });
+    const hero = w.player;
+    const all = [...w.units.values()];
+    const creep = all.find((u) => u.team === 'dire' && u.kind === 'melee_creep');
+    const tower = all.find((u) => u.team === 'dire' && u.kind === 'tower');
+    creep.pos = { x: hero.pos.x + 140, y: hero.pos.y };
+    check('a melee creep reaches a hero at 140', w.inAttackRange(creep, hero), true);
+    creep.pos.x += 1;
+    check('but not at 141', w.inAttackRange(creep, hero), false);
+    hero.pos = { x: tower.pos.x - 868, y: tower.pos.y };
+    check('a tower reaches a hero at 868', w.inAttackRange(tower, hero), true);
+    hero.pos.x -= 1;
+    check('but not at 869', w.inAttackRange(tower, hero), false);
+  }
+
+  {
+    // Siege creeps join every 10th wave from 5:00, which is the 11th to leave.
+    const w = new World({ ...DEFAULT_CONFIG, seed: 22, enemyHero: false, waves: Infinity });
+    const sieges = () => [...w.units.values()].filter((u) => u.kind === 'siege_creep').length;
+    const spawn = (wave) => {
+      w.waveCount = wave - 1;
+      w.spawnWave(400, 5600);
+      return sieges();
+    };
+    check('no siege creep before 5:00', spawn(10), 0);
+    check('a siege creep each side at 5:00', spawn(11), 2);
+    check('none on the wave after', spawn(12), 2);
+    check('the next at 10:00', spawn(21), 4);
+  }
+
+  {
     // Siege creeps are built for buildings and rank a tower above anything else.
     const w = new World({ ...DEFAULT_CONFIG, seed: 15, enemyHero: false, waves: Infinity });
     const tower = [...w.units.values()].find((u) => u.kind === 'tower' && u.team === 'dire');
     const siegeTpl = units.SIEGE_CREEP;
     const { spawnUnit } = units;
-    const siege = spawnUnit(siegeTpl, 'radiant', { x: tower.pos.x - 400, y: tower.pos.y }, w.rng);
+    const siege = { ...spawnUnit(siegeTpl, 'radiant', { x: tower.pos.x - 400, y: tower.pos.y }, w.rng), id: 9400 };
     w.units.set(siege.id, siege);
-    const foe = spawnUnit(units.MELEE_CREEP, 'dire', { x: siege.pos.x + 80, y: siege.pos.y }, w.rng);
+    const foe = { ...spawnUnit(units.MELEE_CREEP, 'dire', { x: siege.pos.x + 80, y: siege.pos.y }, w.rng), id: 9401 };
     w.units.set(foe.id, foe);
     settle(w, 0.2);
     check('siege creeps go for the tower first', siege.attackTargetId, tower.id);
@@ -533,7 +890,12 @@ const results = await page.evaluate(async () => {
     const mixer = {
       play: (name, opts = {}) => {
         plays[name] = (plays[name] ?? 0) + 1;
-        if (name === 'bow_draw') offsets.push(opts.offset ?? 0);
+        // With the wind-up it was timed against, which shortens as the archer
+        // levels and gains agility.
+        if (name === 'bow_draw') {
+          const windup = constants.attackPointTime(w.player.attackPoint, w.player.attackSpeedBonus);
+          offsets.push({ offset: opts.offset ?? 0, windup });
+        }
         return { stop() {} };
       },
       duck() {},
@@ -557,9 +919,14 @@ const results = await page.evaluate(async () => {
     check('lane audio: the archer releases', (plays.bow_release ?? 0) > 0, true);
     check('lane audio: the bot swings', (plays.sword_swing ?? 0) > 0, true);
     // The archer's windup is 0.403 s at level 1, so the draw starts 0.047 s
-    // in (plus up to a frame already gone when it is seen) and ends on the release.
-    const archerWindup = constants.attackPointTime(w.player.attackPoint, w.player.attackSpeedBonus);
-    check('lane audio: the draw is offset to end on the release', offsets.every((o) => o >= 0.45 - archerWindup - 1e-9 && o <= 0.45 - archerWindup + 2 * STEP + 1e-9), true);
+    // in (plus up to a frame already gone when it is seen) and ends on the
+    // release; a level later the windup is shorter and the offset longer.
+    check(
+      'lane audio: the draw is offset to end on the release',
+      offsets.every(({ offset, windup }) => offset >= 0.45 - windup - 1e-9 && offset <= 0.45 - windup + 2 * STEP + 1e-9),
+      true,
+    );
+    check('lane audio: the archer levelled during it', w.player.level > 1, true);
   }
 
   // --- Determinism: same seed, same lane ----------------------------------
@@ -607,7 +974,11 @@ await page.evaluate(() => {
     items: [],
   });
 });
-await page.waitForTimeout(2500);
+// Two seconds on the lane's clock, not the wall's. Under SwiftShader on a slow
+// runner a frame can take the best part of a second, and a frame advances the
+// sim by at most 0.25 s, so 2.5 s of waiting was once too little time for the
+// first melee swing, 0.7 s into the lane, to land.
+await page.waitForFunction(() => (window.__lht.world?.time ?? 0) >= 2, null, { timeout: 60000 });
 
 // And a real drill does make them: the seeded lane starts in combat.
 const drillPlays = await page.evaluate(() => window.__lht.audioStats());

@@ -405,19 +405,21 @@ export class Renderer3D {
 
   /**
    * Tower threat rings, faded in by how close the player is to walking into
-   * one. Drawn flat they are 700-unit circles that cross the whole screen and
-   * read as leftover debug geometry; what you actually want to know is when
-   * the edge is near enough to matter.
+   * one. Drawn flat they are circles that cross the whole screen and read as
+   * leftover debug geometry; what you actually want to know is when the edge
+   * is near enough to matter. The ring is the tower's reach against your
+   * hero's centre: its 700 plus both hulls, 868 in all.
    */
   private drawTowerZones(world: World) {
     for (const u of world.units.values()) {
       if (u.kind !== 'tower' || !u.alive) continue;
+      const reach = u.attackRange + u.radius + world.player.radius;
       const d = Math.hypot(world.player.pos.x - u.pos.x, world.player.pos.y - u.pos.y);
-      // Off entirely until the edge is within walking distance. A 700-unit
-      // circle spans the whole screen at this zoom, so one that is always on is
+      // Off entirely until the edge is within walking distance. A circle this
+      // size spans the whole screen at this zoom, so one that is always on is
       // just a line through the middle of the lane.
-      if (d > u.attackRange + 600) continue;
-      this.ring(u.pos, u.attackRange, u.team === 'radiant' ? 0x5fbf7a : 0xd8615a, 0.2);
+      if (d > reach + 600) continue;
+      this.ring(u.pos, reach, u.team === 'radiant' ? 0x5fbf7a : 0xd8615a, 0.2);
     }
   }
 

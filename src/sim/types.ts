@@ -41,7 +41,12 @@ export interface Unit {
 
   /** Gold the killer receives. Creeps roll within a range at spawn. */
   bounty: number;
-  xp: number;
+  /** Experience the enemy heroes near it share when it dies (`BountyXP`). */
+  bountyXp: number;
+  /** Heroes level up; everything else stays at 1. */
+  level: number;
+  /** Heroes only: experience gathered so far. */
+  experience: number;
 
   alive: boolean;
 
@@ -68,8 +73,13 @@ export interface Unit {
   /** Forced aggro: unit id and remaining seconds. */
   aggroTargetId: number | null;
   aggroTimer: number;
-  /** Heroes only: seconds until this unit's next aggro check is allowed. */
+  /**
+   * Heroes: seconds until their next pull or hand-back is allowed. Towers: until
+   * they can be talked out of a target again.
+   */
   aggroCooldown: number;
+  /** A hero that handed this unit's aggro back: ranked last until the unit settles on another target. */
+  shunnedId: number | null;
 }
 
 export interface Projectile {
