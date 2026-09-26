@@ -16,7 +16,7 @@ npm run dev
 ## What it trains, in four layers
 
 1. **Last hits** — always on. Land the killing blow on enemy creeps.
-2. **Denies** — A-click your own creeps at or under 50% HP. The deny line is drawn on every health bar.
+2. **Denies** — A-click your own creeps at or under 50% HP.
 3. **Contested lane** — an enemy hero goes for the same creeps, with a reaction delay and an HP-estimate error band set by difficulty. It does not read the simulation state perfectly.
 4. **Creep aggro** — right-clicking the enemy hero pulls every enemy creep within 500 range onto you for 2.3 seconds, and pulls the tower if you are inside its range. Harass is not free.
 
