@@ -1,59 +1,259 @@
-# Sound list
+# Sounds
 
-Sounds to generate for the drill, modelled on what Dota itself plays in lane.
-Nothing is wired up yet; this is the shopping list.
+The sounds to generate for the drill, and the prompts to generate them with.
+Modelled on what Dota itself plays in lane. Wiring them into the game is
+planned in `docs/plans/audio.md`.
 
 The rule is the same one the renderer follows: **the drill should sound like
 the game.** Dota gives you no audio cue for "this creep is killable", so none is
 listed here. What it does give you is an attack sound at the moment of contact
 and a coin clink on a last hit, and that is what a player's ear is trained on.
 
-Format: mono WAV or OGG, 44.1 kHz, trimmed tight (no silence before the
-transient: a late onset shifts where the hit seems to land). Sounds that play
-every second need 2–3 variations so the lane does not machine-gun; the loader
-can pick one at random render-side (never through `world.rng`).
+## The list
 
-## Must have
+**Must have**
 
-| File | When it plays | Sim hook | Var. | Prompt idea |
-|---|---|---|---|---|
-| `last_hit_gold` | You get a last hit | `KillEvent`, killer is you, `gold > 0` | 1 | small bright coin clink, two coins, short, clean |
-| `deny` | You deny one of your creeps | `KillEvent`, killer is you, `denied` | 1 | soft muted thud with a short dry click, understated |
-| `sword_swing` | Swordmaster's windup starts | hero enters windup | 2 | fast blade whoosh, light, short |
-| `sword_hit` | Swordmaster's blow lands | `DamageEvent`, hero, melee | 3 | sword slicing into leather armor, sharp, short |
-| `bow_release` | Frost Archer's arrow leaves | projectile spawned by hero | 2 | bowstring twang with an icy shimmer |
-| `frost_arrow_hit` | Arrow lands | `DamageEvent`, hero, ranged | 2 | arrow thunk into flesh with a small ice crackle |
-| `melee_creep_hit` | Melee creep's swing lands | `DamageEvent`, creep, melee | 3 | crude club or short sword hitting armor, dull, short |
-| `ranged_creep_cast` | Ranged creep fires | projectile spawned by creep | 2 | small magic bolt whoosh, soft |
-| `ranged_creep_hit` | Its bolt lands | `DamageEvent`, creep, ranged | 2 | small magic impact, fizzle pop |
-| `creep_death` | Any creep dies | `KillEvent`, victim is a creep | 3 | short creature death grunt, not gory |
+| File | When it plays | Var. | Length |
+|---|---|---|---|
+| `last_hit_gold` | You get a last hit | 1 | 0.5 s |
+| `deny` | You deny one of your creeps | 1 | 0.4 s |
+| `sword_swing` | Swordmaster's windup starts | 2 | 0.3 s |
+| `sword_hit` | Swordmaster's blow lands | 3 | 0.4 s |
+| `bow_release` | Frost Archer's arrow leaves | 2 | 0.4 s |
+| `frost_arrow_hit` | The arrow lands | 2 | 0.4 s |
+| `melee_creep_hit` | A melee creep's swing lands | 3 | 0.3 s |
+| `ranged_creep_cast` | A ranged creep fires | 2 | 0.4 s |
+| `ranged_creep_hit` | Its bolt lands | 2 | 0.3 s |
+| `creep_death` | Any creep dies | 3 | 0.8 s |
 
-`sword_swing` is the one sound that starts at the *beginning* of the attack
-rather than its end. Dota has it too (the `PreAttack` sound many melee heroes
-carry), and it is what lets you hear that you started a swing too early.
+**Nice to have**
 
-The hit sounds matter more than they look: in Dota you time a last hit partly
-by ear, listening to the creeps' own hits on the target. Keep them short and
-with a hard transient so each one is clearly placed in time.
+| File | When it plays | Var. | Length |
+|---|---|---|---|
+| `siege_launch` | The catapult fires | 1 | 0.8 s |
+| `siege_hit` | Its boulder lands | 1 | 0.8 s |
+| `tower_attack` | The tower fires | 1 | 0.6 s |
+| `tower_hit` | The tower's bolt lands | 1 | 0.5 s |
+| `hero_death` | A hero dies | 1 | 1.5 s |
+| `horn` | The run starts (Dota's 0:00 horn) | 1 | 3 s |
+| `lane_ambience` | Loops under the whole run | 1 | 45 s |
+| `ui_click` | Menu buttons | 1 | 0.1 s |
+| `run_end` | The results screen opens | 1 | 2 s |
 
-## Nice to have
+"Length" is what the file should be after trimming, not what to generate (see
+below). Name variations `melee_creep_hit_1.ogg`, `_2`, `_3`.
 
-| File | When it plays | Sim hook | Var. | Prompt idea |
-|---|---|---|---|---|
-| `siege_launch` | Catapult fires | siege attack release | 1 | wooden catapult arm thump and creak |
-| `siege_hit` | Boulder lands | `DamageEvent`, siege | 1 | heavy rock impact, low, crunchy |
-| `tower_attack` | Tower fires | tower attack release | 1 | deep arcane bolt launch, resonant |
-| `tower_hit` | Tower bolt lands | `DamageEvent`, tower | 1 | heavy energy impact, short |
-| `hero_death` | A hero dies | `KillEvent`, victim is a hero | 1 | low heavy fall with armor clatter |
-| `horn` | Run starts (Dota's 0:00 horn) | `start()` in `main.ts` | 1 | distant war horn, one long note |
-| `lane_ambience` | Loops under the whole run | — | 1 | outdoor forest ambience, light wind, distant birds, seamless loop, 30–60 s |
-| `ui_click` | Menu buttons | DOM | 1 | soft wooden UI click |
-| `run_end` | Results screen | `finish()` in `main.ts` | 1 | short low gong or drum hit |
+`sword_swing` is the one sound that starts at the *beginning* of an attack
+rather than at its end. Dota has it too (the `PreAttack` sound many melee
+heroes carry), and it is how you hear that you started a swing too early.
 
-## Deliberately left out
-
-- **Voice lines** (hero responses on orders, "denied!" taunts). Dota has them,
-  but they are the most repetitive part and add nothing to the timing.
+**Deliberately left out:**
+- **Voice lines**, such as hero responses to orders and "denied!" taunts.
+  Dota has them, but they are the most repetitive part and add nothing to the
+  timing.
 - **Footsteps.** Ten rigs walking is noise, not information.
 - **Anything Dota does not play:** a "killable now" ping, a wave-spawn chime,
-  a miss sound. Same reason the overlay aids were removed.
+  a miss sound. The same reason the overlay aids were removed.
+
+## The model: Stable Audio 3
+
+Researched 2026-09-26. Use **Stable Audio 3**, natively supported in ComfyUI
+since v0.22.0 (its templates are under Audio in the template browser).
+
+- **Medium** (`stable_audio_3_medium_base.safetensors`) is the one to use if
+  you have a GPU. It scores best on sound effects of the released weights in
+  Stability's own paper (FAD 0.369 against Small-SFX's 0.395, lower is
+  better), and it handles SFX and music in one model. Use the **Medium Base**
+  template, not **Medium**: the plain Medium template runs your text through
+  Qwen to "expand" it, which is the opposite of what a tightly written one-shot
+  prompt wants.
+- **Small-SFX** (`stable_audio_3_small_sfx.safetensors`, 2.3 GB) is the
+  fallback. It is SFX-only, runs on a CPU and is very fast. It is good for
+  auditioning a prompt, then re-rendering the keepers with Medium.
+- Both need `t5gemma_b_b_ul2.safetensors` in `models/text_encoders/`. The
+  checkpoints go in `models/checkpoints/`. The weights are gated on Hugging
+  Face: accept the licence on the model page first.
+- **Licence:** Stability AI Community License. You own what it generates, and
+  commercial use is free below $1M annual revenue after registering. That
+  covers a public GitHub Pages build.
+- It outputs **44.1 kHz stereo**, which is what the drill wants.
+
+Alternatives considered:
+- **Woosh** (Sony AI) is SFX-specialised, but its weights are CC-BY-NC, so
+  non-commercial only. It needs a custom node, and it scores below SA3 on
+  SA3's benchmark (FAD 0.58).
+- **Stable Audio Open 1.0** is also native, and one tester found it sounds
+  richer, but it is about 50x slower. It is worth a try for `lane_ambience` if
+  SA3's attempt sounds thin.
+- **TangoFlux** and **AudioLDM** are older and score lower.
+- **ElevenLabs** is available as a ComfyUI API node, but it is a paid cloud
+  service. Only worth it if something above will not come out right.
+
+### Settings
+
+- **Steps 8, CFG 1.0, sampler `pingpong`.** SA3 is distilled, so its guidance
+  is baked in, and more steps or higher CFG do not help.
+- **CFG 1 means a negative prompt does nothing.** Put everything you do *not*
+  want into the positive prompt as what you do want: "dry, close-miked",
+  never "no reverb" in a negative box.
+- **Start every prompt with `TrackType: SFX,`.** SA3 was trained with that
+  prefix, and Stability's paper says it significantly improves results.
+- **Generate about 2 s even for a 0.3 s sound**, then trim. Very short
+  requests tend to come out mushy or cut off. Exceptions: 5 s for the horn and
+  `run_end`, and 45–60 s for the ambience.
+- **Batch 8 seeds per prompt** and keep the best 2–3 as the variations. That
+  is faster than rewording, and different seeds of one prompt match each other
+  in tone, which is what variations should do.
+- Write down the seed of every keeper next to the file, so it can be
+  re-rendered later.
+
+### How the prompts are built
+
+The pattern follows Stability's prompt guide: **source** (what makes the
+sound), **action** (how it is triggered and how long it lasts), **character**
+(timbre and recording). Every one-shot ends with the same recording
+description, so the set sounds like it came from one session:
+
+> dry close-miked studio recording, single isolated one-shot, sharp attack
+
+Several details come from the models the lane actually shows. The creeps are
+KayKit skeletons: melee creeps carry a blade and shield, ranged ones a staff
+and a caster's hat. So a creep death is bones, not flesh. The heroes are an
+armoured knight with a two-handed sword and an archer with a bow.
+
+## Prompts
+
+Copy each block as is.
+
+### Must have
+
+**`last_hit_gold`**. The one sound that must always cut through, so keep it
+bright and high.
+```
+TrackType: SFX, two small gold coins clinking together once, bright metallic ring, short sparkle tail, fantasy game reward sound, dry close-miked studio recording, single isolated one-shot, sharp attack
+```
+
+**`deny`**. Dota's deny is understated, so keep it low and dry, clearly
+different from the coin.
+```
+TrackType: SFX, a short muted wooden knock with a dull dry click, soft and understated, low-mid body, quick decay, dry close-miked studio recording, single isolated one-shot, sharp attack
+```
+
+**`sword_swing`**
+```
+TrackType: SFX, a heavy two-handed sword swung fast through the air, short airy whoosh with a faint metallic edge, rising then cut off, dry close-miked studio recording, single isolated one-shot, sharp attack
+```
+
+**`sword_hit`**
+```
+TrackType: SFX, a heavy steel sword striking a bony armored target, sharp metallic chop with a crunchy low thud, short and punchy, dry close-miked studio recording, single isolated one-shot, sharp attack
+```
+
+**`bow_release`**
+```
+TrackType: SFX, a wooden longbow string released, taut twang and a quick arrow whoosh, with a faint high icy shimmer, dry close-miked studio recording, single isolated one-shot, sharp attack
+```
+
+**`frost_arrow_hit`**
+```
+TrackType: SFX, an arrow thudding into a target, short wooden thunk with a small crackle of ice forming, crisp and cold, dry close-miked studio recording, single isolated one-shot, sharp attack
+```
+
+**`melee_creep_hit`**. It plays constantly, so keep it duller and smaller than
+`sword_hit`.
+```
+TrackType: SFX, a rusty short blade hacking into a wooden shield, dull clack with a small bony knock, short and light, dry close-miked studio recording, single isolated one-shot, sharp attack
+```
+
+**`ranged_creep_cast`**
+```
+TrackType: SFX, a small magic bolt fired from a wooden staff, soft whooshing fizz with a hollow puff, short and light, dry close-miked studio recording, single isolated one-shot, sharp attack
+```
+
+**`ranged_creep_hit`**
+```
+TrackType: SFX, a small magic bolt hitting a target, quick sizzling pop with a tiny crackle, short and light, dry close-miked studio recording, single isolated one-shot, sharp attack
+```
+
+**`creep_death`**
+```
+TrackType: SFX, a small skeleton collapsing to the ground, dry bones clattering and a light armor rattle, brief hollow rasp at the start, dry close-miked studio recording, single isolated one-shot
+```
+
+### Nice to have
+
+**`siege_launch`**
+```
+TrackType: SFX, a wooden catapult arm snapping forward and hitting its stop, deep wooden thump with a rope creak, heavy and short, dry close-miked studio recording, single isolated one-shot, sharp attack
+```
+
+**`siege_hit`**
+```
+TrackType: SFX, a large boulder slamming into the ground and a wooden barricade, heavy low crunch with scattered debris, short tail, dry close-miked studio recording, single isolated one-shot, sharp attack
+```
+
+**`tower_attack`**
+```
+TrackType: SFX, an ancient stone tower firing a bolt of arcane energy, deep resonant magical launch with a low hum, short, dry close-miked studio recording, single isolated one-shot, sharp attack
+```
+
+**`tower_hit`**
+```
+TrackType: SFX, a heavy bolt of arcane energy striking a target, deep punchy magical impact with a short crackle, dry close-miked studio recording, single isolated one-shot, sharp attack
+```
+
+**`hero_death`**
+```
+TrackType: SFX, an armored warrior falling heavily to the ground, metal armor clattering and a low body thud, weapon dropping after, dry close-miked studio recording, single isolated one-shot
+```
+
+**`horn`**
+```
+TrackType: SFX, a single long note on a large war horn blown in the distance across an open valley, deep and brassy, natural outdoor echo, slow swell and fade
+```
+
+**`lane_ambience`**. Generate 60 s, cut 45 s from the middle, and crossfade
+the ends. Avoid distinct bird calls: they will be heard looping.
+```
+TrackType: SFX, outdoor forest clearing ambience, gentle steady wind through trees, soft distant birdsong, rustling leaves, calm and even, no distinct events, field recording
+```
+
+**`ui_click`**
+```
+TrackType: SFX, a soft wooden button click, small and muted, very short, dry close-miked studio recording, single isolated one-shot, sharp attack
+```
+
+**`run_end`**
+```
+TrackType: SFX, a single deep war drum hit with a low gong ringing out, solemn and warm, slow natural decay, dry close-miked studio recording
+```
+
+## When a result is wrong
+
+- **It has a reverb tail:** add "dead room" before "dry close-miked".
+- **It is music, or has a melody:** move `TrackType: SFX,` to the very start
+  if it is not there, and drop words like "fantasy" and "game".
+- **Several hits instead of one:** put "a single" in front of the source noun
+  and shorten the requested length to 1.5 s.
+- **Two variations sound too alike:** try the next seed rather than rewording.
+  Rewording drifts the tone away from its siblings.
+
+## Before handing the files over
+
+Clean up every file the same way, in Audacity or Reaper:
+
+1. Cut the silence before the transient. A late onset shifts where the hit
+   seems to land.
+2. Fade out over 5–10 ms.
+3. Cut below 80–100 Hz on everything except the siege, tower, horn,
+   `run_end` and death sounds.
+4. Normalize every one-shot to −1 dBFS peak, and `lane_ambience` to about
+   −23 LUFS. The balance between them is set in code, not in the files.
+5. Mix down to mono, except `lane_ambience`, which stays stereo.
+6. Export 16-bit WAV into `public/audio/`: 44.1 kHz for the one-shots, and
+   22.05 kHz for `lane_ambience` (about 4 MB instead of 8).
+
+Why WAV and not a compressed format: MP3 and AAC pad the start of every file
+with encoder silence, about 25 ms, which is exactly the late onset step 1
+removes. They also click at a loop point. OGG avoids both, but older Safari
+cannot decode it. All the one-shots together come to well under 2 MB as WAV.
