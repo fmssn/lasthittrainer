@@ -36,7 +36,7 @@ export class Hud {
       <div class="hud-bottom">
         <div class="hints">
           <span><kbd>RMB</kbd> move / attack</span>
-          <span class="hint-a" data-hint-a><kbd>A</kbd> attack / deny under cursor</span>
+          <span><kbd>A</kbd> attack / deny under cursor</span>
           <span><kbd>S</kbd> stop</span>
           <span><kbd>Space</kbd> pause</span>
         </div>
@@ -62,7 +62,7 @@ export class Hud {
     this.el.hidden = true;
   }
 
-  update(world: World, attackReady: boolean) {
+  update(world: World) {
     const s = world.stats;
     if (this.stocked !== world) {
       this.stocked = world;
@@ -89,9 +89,6 @@ export class Hud {
       panel.hidden = true;
     }
 
-    // Lights up while the cursor is on something A would hit, which is the
-    // only cue left now that A no longer arms a visible crosshair.
-    this.q('data-hint-a').classList.toggle('active', attackReady);
     const dead = this.q('data-dead');
     dead.hidden = world.player.alive;
     if (!world.player.alive) {

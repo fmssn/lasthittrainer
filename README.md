@@ -40,13 +40,9 @@ The window where a creep is exactly one hero hit from death is roughly half a
 second. The Frost Archer's attack takes 0.4s of wind-up plus arrow travel — so
 by the time a creep *looks* killable, it is already too late to click.
 
-That is why the "swing now" highlight in this trainer is predictive. It projects
-the creep's HP forward to the instant your attack would actually land, counting
-every projectile already in the air and every scheduled swing from everything
-else hitting it, and lights up when starting a swing *right now* would finish it.
-That is the timing your hands need to learn.
-
-Turn the training aids off once it clicks. That is the graduation.
+There are no training aids to lean on: no killable highlight, no damage
+preview, no deny line, no wind-up arc. The health bars look like they do in
+game, so the timing you build here is the timing you take back there.
 
 ## Fidelity notes
 

@@ -190,16 +190,6 @@ export class Menu {
           </div>
         </section>
 
-        <section class="block">
-          <h2>Training aids</h2>
-          <div class="chip-row">
-            <button class="chip toggle ${c.showKillableHighlight ? 'selected' : ''}" data-toggle-btn="showKillableHighlight">Killable highlight</button>
-            <button class="chip toggle ${c.showDamagePreview ? 'selected' : ''}" data-toggle-btn="showDamagePreview">Damage preview</button>
-            <button class="chip toggle ${c.showRangeRings ? 'selected' : ''}" data-toggle-btn="showRangeRings">Range ring</button>
-          </div>
-          <p class="aside">Turn these off once the timing is in your hands. That is the actual graduation.</p>
-        </section>
-
         ${runs.length ? `<section class="block"><h2>Recent runs</h2><div class="runs">${runs.map(runRow).join('')}</div></section>` : ''}
 
         <button class="start" data-start>Start drill</button>
@@ -240,12 +230,6 @@ export class Menu {
     );
     this.el.querySelectorAll<HTMLInputElement>('[data-toggle]').forEach((n) =>
       n.addEventListener('change', () => this.set(n.dataset.toggle as 'deniesEnabled', n.checked)),
-    );
-    this.el.querySelectorAll<HTMLElement>('[data-toggle-btn]').forEach((n) =>
-      n.addEventListener('click', () => {
-        const key = n.dataset.toggleBtn as 'showKillableHighlight';
-        this.set(key, !this.config[key]);
-      }),
     );
     this.el.querySelector('[data-start]')?.addEventListener('click', () => {
       this.onStart({ ...this.config, seed: (Math.random() * 0xffff) | 0 });

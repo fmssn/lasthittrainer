@@ -47,9 +47,6 @@ await page.evaluate(() => {
     enemyHeroId: 'swordmaster',
     enemyDifficulty: 3,
     aggroEnabled: true,
-    showKillableHighlight: true,
-    showRangeRings: true,
-    showDamagePreview: true,
     // Fixed, so two runs of this script frame the same moment of the same lane.
     seed: 4242,
   });

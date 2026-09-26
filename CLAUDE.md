@@ -113,7 +113,6 @@ src/render3d/     The renderer: three.js stage + screen-space overlay
   projectileView.ts  Oriented bolts with trails; flat travel, no arc
   renderer3d.ts   Renderer3D: scene + views + ground rings, and unit picking
   annotations.ts  Screen-space layer: health bars, windup arc, floaters
-  targetAids.ts   isPlayerTarget — the rule every training aid keys off
 src/ui/           menu.ts, hud.ts, results.ts — plain DOM over the canvas
   inventory.ts    The six item slots, shared by the menu, HUD and results
   itemIcons.ts    Item icons as SVG, in the style of the WC3 buttons
@@ -188,10 +187,16 @@ are gone, along with the menu's renderer picker. Reach for git history rather
 than reintroducing the abstraction for a second implementation that does not
 exist.
 
-The drawing splits in two: ground-plane art (range rings, tower zones, the
-killable pulse) is real geometry, while anything that must stay screen-sized and
-legible mid-swing (health bars, the damage preview, the windup arc, floaters)
-is drawn by `annotations.ts` on a 2D canvas over the stage.
+The drawing splits in two: ground-plane art (the selection ring, tower zones)
+is real geometry, while anything that must stay screen-sized and legible
+mid-swing (health bars, floaters) is drawn by `annotations.ts` on a 2D canvas
+over the stage.
+
+There are no training aids. A killable highlight, damage preview, deny line on
+the bars, an in-flight damage chunk, wind-up arc, range ring, a dashed line to
+your attack target and an A-key hint that lit up over a denyable creep all existed and were removed as distracting: the drill should
+look like the game, so the timing is read off the creep and not the overlay.
+Do not add them back without being asked.
 Sim→three mapping is fixed in `scene.ts`: sim `(x, y)` → three `(x, 0, y)`, +Y up.
 
 `#game` is the pointer surface: it stays transparent and the stage canvases are

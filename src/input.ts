@@ -33,17 +33,6 @@ export class Input {
     this.world = world;
   }
 
-  /**
-   * Whether pressing A right now would land on a unit. Drives the HUD hint, so
-   * a creep crossing the deny line reads as denyable before the key is pressed.
-   */
-  isAttackReady(): boolean {
-    const world = this.world;
-    if (!world || !world.player.alive || world.finished) return false;
-    const target = this.renderer.pickUnit(this.lastScreen, world, world.player);
-    return target !== null && world.canTarget(world.player, target);
-  }
-
   private screen(e: MouseEvent) {
     const rect = this.canvas.getBoundingClientRect();
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };

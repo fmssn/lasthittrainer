@@ -438,9 +438,6 @@ await page.evaluate(() => {
     enemyHeroId: 'swordmaster',
     enemyDifficulty: 3,
     aggroEnabled: true,
-    showKillableHighlight: true,
-    showRangeRings: true,
-    showDamagePreview: true,
     seed: 4242,
   });
 });

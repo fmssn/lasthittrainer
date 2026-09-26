@@ -172,7 +172,7 @@ function frame(now: number) {
     // Lead the camera toward the enemy side; that is where the creeps you are
     // farming always are.
     renderer.follow(world.player.pos, elapsed, CAMERA_LEAD);
-    hud.update(world, input.isAttackReady());
+    hud.update(world);
     if (world.finished) finish();
   }
 

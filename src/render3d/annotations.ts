@@ -1,16 +1,15 @@
 import * as THREE from 'three';
 import type { Unit, Vec2 } from '../sim/types.ts';
 import type { World } from '../sim/world.ts';
-import { AGGRO_DURATION, attackPointTime } from '../sim/constants.ts';
+import { AGGRO_DURATION } from '../sim/constants.ts';
 import { clamp } from '../sim/math.ts';
-import { isPlayerTarget } from './targetAids.ts';
 import { healthBarHeight } from './appearance.ts';
 
 /**
  * The screen-space layer of the 3D renderer.
  *
- * Health bars, the damage preview and the windup arc are read at
- * a glance mid-swing, so they must not shrink or tilt with the stage. They are
+ * Health bars are read at a glance mid-swing, so they must not shrink or tilt
+ * with the stage. They are
  * drawn on a 2D canvas over the WebGL one, at positions projected through the
  * same camera — the 3D stage stays the world, this stays the instrument.
  *
@@ -24,13 +23,10 @@ import { healthBarHeight } from './appearance.ts';
 const COLORS = {
   radiant: '#5fbf7a',
   dire: '#d8615a',
-  killable: '#ffd479',
   text: '#e6edf3',
   shadow: 'rgba(0,0,0,0.85)',
   /** Dota's hurt chunk is white; kept below full opacity so it never reads as health. */
   hurt: 'rgba(255,255,255,0.7)',
-  /** Laid over the fill, so damage in flight stays the team's colour, only dimmer. */
-  inFlight: 'rgba(0,0,0,0.45)',
   sheen: 'rgba(255,255,255,0.22)',
   /** Dota outlines the bar under the cursor too (`dota_hud_healthbar_hoveroutline_alpha`). */
   hover: 'rgba(255,255,255,0.78)',
@@ -129,7 +125,7 @@ export class Annotations {
 
   /**
    * Fill the span between two edges, both snapped. Taking edges rather than a
-   * width is what lets adjacent segments — fill, in-flight, hurt — share a
+   * width is what lets adjacent segments — fill, hurt, hero ticks — share a
    * boundary exactly instead of leaving a hairline or overlapping by one.
    */
   private span(x0: number, y0: number, x1: number, y1: number) {
@@ -181,7 +177,6 @@ export class Annotations {
     ctx.clearRect(0, 0, this.w, this.h);
     ctx.save();
 
-    this.drawOrderLine(world);
     const dt = this.tickHurt(world);
     // Far units first, so a near health bar wins the overlap. Sorted on screen
     // rather than on sim y: the camera is yawed, so a unit further along the
@@ -190,9 +185,8 @@ export class Annotations {
     const depth = new Map(alive.map((u) => [u.id, this.project(u.pos).y]));
     alive.sort((a, b) => depth.get(a.id)! - depth.get(b.id)!);
     for (const u of alive) {
-      if (u.phase === 'windup') this.drawWindup(world, u);
       if (u.aggroTimer > 0) this.drawAggro(u);
-      if (u.kind !== 'tower') this.drawHealthBar(world, u, hoverId, this.hurtEdge(u, dt));
+      if (u.kind !== 'tower') this.drawHealthBar(u, hoverId, this.hurtEdge(u, dt));
     }
     this.drawFloaters(world);
 
@@ -239,7 +233,7 @@ export class Annotations {
     return s.hp;
   }
 
-  private drawHealthBar(world: World, u: Unit, hoverId: number | null, hurtHp: number) {
+  private drawHealthBar(u: Unit, hoverId: number | null, hurtHp: number) {
     const ctx = this.ctx;
     const head = this.project(u.pos, healthBarHeight(u));
     if (this.behind()) return;
@@ -252,18 +246,11 @@ export class Annotations {
     const y = this.px(head.y - h);
     const edge = (hp: number) => x + w * clamp(hp / u.maxHp, 0, 1);
 
-    // A creep you could kill right now gets a gold frame. This is the single
-    // most useful thing on screen while last hitting, so it is a property of
-    // the bar rather than something to hunt for on the ground.
-    const killable =
-      world.config.showKillableHighlight &&
-      !hero &&
-      world.player.alive &&
-      isPlayerTarget(world, u) &&
-      world.shouldSwingNow(world.player, u);
-
-    // The frame is also the empty well: what is missing reads as dark, the way
-    // Dota's does, and the bar keeps its full length at any health.
+    // Nothing but the bar itself: no deny line, no damage preview, no
+    // killable frame, no damage in flight. Dota draws none of them, and a
+    // drill that leans on them trains you to read the overlay rather than the
+    // creep. The frame is also the empty well: what is missing reads as dark,
+    // the way Dota's does, and the bar keeps its full length at any health.
     ctx.fillStyle = COLORS.shadow;
     this.span(x - 1, y - 1, x + w + 1, y + h + 1);
     if (hoverId === u.id) {
@@ -280,16 +267,6 @@ export class Annotations {
     ctx.fillStyle = COLORS.sheen;
     this.span(x, y, live, y + Math.round(h / 4));
 
-    // Damage already in the air, as the leading end of the fill dimmed: what
-    // the bar will read once everything in flight lands. Dimmed rather than
-    // whitened, so it cannot run together with the hurt chunk on the far side
-    // of the same edge.
-    if (u.incomingDamage > 0) {
-      ctx.fillStyle = COLORS.inFlight;
-      const from = Math.min(edge(u.hp - u.incomingDamage), live - 1 / this.dpr);
-      this.span(Math.max(x, from), y, live, y + h);
-    }
-
     if (hero) {
       for (let i = 1, hp = HP_PER_MARKER; hp < u.maxHp; i++, hp += HP_PER_MARKER) {
         const major = i % MARKERS_PER_MAJOR === 0;
@@ -299,48 +276,12 @@ export class Annotations {
       }
     }
 
-    // Where your next hit would leave it, as a notch on the bar. The one mark
-    // allowed past the bar's edges, because it is the one you aim with.
-    if (world.config.showDamagePreview && !hero && world.player.alive && isPlayerTarget(world, u)) {
-      const dmg = world.expectedDamage(world.player, u);
-      const nx = edge(world.hpAtLanding(world.player, u) - dmg);
-      ctx.fillStyle = COLORS.killable;
-      this.span(nx - 1, y - 2, nx + 1, y + h + 2);
-    }
-
-    if (killable) {
-      ctx.fillStyle = COLORS.killable;
-      this.ring(x - 3, y - 3, x + w + 3, y + h + 3, 2);
-    }
-
     if (hoverId === u.id) {
       this.label(`${Math.ceil(u.hp)} / ${Math.round(u.maxHp)}`, head.x, y - 7, COLORS.text, 11);
     }
   }
 
-  // ------------------------------------------------------------------- swing
-
-  /**
-   * A shrinking arc showing exactly how much wind-up is left.
-   *
-   * The player's own swing is drawn bright and thick because it is the thing
-   * being trained; everyone else's is faint, so a wave mid-fight does not turn
-   * into a screen full of rings.
-   */
-  private drawWindup(world: World, u: Unit) {
-    const ctx = this.ctx;
-    const s = this.project(u.pos, 10);
-    if (this.behind()) return;
-    const mine = u.id === world.player.id;
-    const r = Math.max(10, u.radius * this.pxPerUnitAt(u.pos) + (mine ? 16 : 10));
-    const total = attackPointTime(u.attackPoint, u.attackSpeedBonus);
-    const p = clamp(1 - u.phaseTimer / total, 0, 1);
-    ctx.strokeStyle = mine ? COLORS.killable : 'rgba(255,255,255,0.3)';
-    ctx.lineWidth = mine ? 3 : 1.5;
-    ctx.beginPath();
-    ctx.arc(s.x, s.y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * p);
-    ctx.stroke();
-  }
+  // ------------------------------------------------------------------- aggro
 
   /** Forced aggro: these creeps are coming for you. */
   private drawAggro(u: Unit) {
@@ -355,22 +296,6 @@ export class Annotations {
     ctx.arc(s.x, s.y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (u.aggroTimer / AGGRO_DURATION));
     ctx.stroke();
     ctx.globalAlpha = 1;
-  }
-
-  private drawOrderLine(world: World) {
-    const target = world.get(world.player.attackTargetId);
-    if (!target || !world.player.alive) return;
-    const a = this.project(world.player.pos, 40);
-    const b = this.project(target.pos, 40);
-    const ctx = this.ctx;
-    ctx.strokeStyle = 'rgba(255,212,121,0.28)';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 6]);
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-    ctx.stroke();
-    ctx.setLineDash([]);
   }
 
   private drawFloaters(world: World) {
