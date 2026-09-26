@@ -100,3 +100,9 @@ sim modules through vite, then asserts numbers — the reference values, swing
 timing to the frame, creep targeting and aggro, contact behaviour, and a
 fixed-seed replay. That is how it exists at all in a project whose only runtime
 dependency is three.
+
+## Credits
+
+The melee and ranged creeps are from Kay Lousberg's
+[KayKit Character Pack: Skeletons](https://kaylousberg.itch.io/kaykit-skeletons)
+(CC0), recoloured per team by `tools/blender/build_units.py`.

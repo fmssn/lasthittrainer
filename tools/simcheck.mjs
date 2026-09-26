@@ -429,6 +429,10 @@ const results = await page.evaluate(async () => {
 // This is the only check that covers pickUnit -> orderAttack end to end: a real
 // right-click at a real screen position, against the upright cylinders the
 // renderer tests the cursor ray against.
+//
+// start() needs the renderer, which boot() builds only once every model has
+// loaded; the loading screen comes down at that point.
+await page.waitForFunction(() => !document.querySelector('.loading'), null, { timeout: 60000 });
 await page.evaluate(() => {
   window.__lht.start({
     heroId: 'frost_archer',

@@ -2,24 +2,23 @@ import './style.css';
 import { World } from './sim/world.ts';
 import type { DrillConfig } from './sim/config.ts';
 import { Renderer3D } from './render3d/renderer3d.ts';
-import { loadCreep, type CreepAsset } from './render3d/unitView.ts';
+import { loadUnitAssets, type UnitAssets } from './render3d/unitView.ts';
 import { Input } from './input.ts';
 import { Hud } from './ui/hud.ts';
 import { Menu } from './ui/menu.ts';
 import { Results } from './ui/results.ts';
 
 /**
- * Where the creep rig comes from.
+ * Where a model under public/ comes from.
  *
  * The single-file build (`npm run pack`) has nowhere to fetch a file from — the
  * whole app is one HTML document, and the strict CSP it is published under
- * blocks the request anyway — so it injects the GLB as a `data:` URL on this
- * global instead. `loadCreep` already knows to parse a data: URL rather than
- * fetch one, which is the only reason that path exists.
+ * blocks the request anyway — so it injects every GLB as a `data:` URL on this
+ * global, keyed by its path under public/. The loaders already know to parse a
+ * data: URL rather than fetch one, which is the only reason that path exists.
  */
-const MODEL_URL =
-  (window as unknown as { __LHT_MODEL__?: string }).__LHT_MODEL__ ??
-  `${import.meta.env.BASE_URL}models/melee_creep.glb`;
+const INLINED = (window as unknown as { __LHT_MODELS__?: Record<string, string> }).__LHT_MODELS__;
+const modelUrl = (path: string) => INLINED?.[path] ?? `${import.meta.env.BASE_URL}${path}`;
 
 const SIM_STEP = 1 / 120;
 const MAX_CATCHUP = 0.25;
@@ -71,20 +70,20 @@ async function boot() {
     </div>`;
   overlay.appendChild(loading);
 
-  let asset: CreepAsset;
+  let assets: UnitAssets;
   try {
-    asset = await loadCreep(MODEL_URL);
+    assets = await loadUnitAssets(modelUrl);
   } catch (err) {
     // textContent, not innerHTML: the message comes from a loader, not from us.
     loading.querySelector('h1')!.textContent = 'Could not start';
     loading.querySelector('[data-msg]')!.textContent =
-      `The creep model failed to load: ${(err as Error).message}. Reload to try again.`;
+      `The unit models failed to load: ${(err as Error).message}. Reload to try again.`;
     console.error(err);
     return;
   }
   loading.remove();
 
-  renderer = new Renderer3D(app, canvas, asset);
+  renderer = new Renderer3D(app, canvas, assets);
   input = new Input(canvas, renderer);
   input.onPause = () => {
     if (state === 'playing') setPaused(true);
