@@ -29,6 +29,19 @@ the pinned Blender and packs from `tools/fetch_assets.sh`:
 melee_creep` for one look, `--renders DIR` for contact sheets under `xvfb-run`).
 It checks every file it writes and two builds are byte-identical.
 
+`tools/blender/check_anim.py` checks the hero clips the way three.js plays
+them and films what it finds: `<blender> --background --python
+tools/blender/check_anim.py -- --glb public/models/heroes/swordmaster.glb
+--glb public/models/heroes/frost_archer.glb [--blend tools/blender/heroes.blend]
+[--clips Attack,Walk] [--no-video]` (under `xvfb-run -a` without a display).
+Per bone and 60 fps sample it measures the parent-relative turn (short path),
+jitter and the Idle/Walk loop seams; it also measures clipping between the
+deformed meshes (bind-pose intersections excluded), GLB weights, and with
+`--blend` influences past four and Preserve Volume. Thresholds are constants at
+the top. It writes `shots/anim/report.md`, `report.json`, and one MP4 per hero
+and clip: clay 3/4 and side views, 4x slow, flagged frames held, flagged bones
+orange and clipping faces red. It reads the models and never writes them.
+
 The three browser harnesses drive the Chromium a Claude Code container ships at
 `/opt/pw-browsers`; anywhere else they fall back to playwright's own, which
 `npx playwright install chromium` fetches once. `CHROMIUM` overrides both
