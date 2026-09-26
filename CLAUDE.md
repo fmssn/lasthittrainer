@@ -313,3 +313,11 @@ state should go in the renderer.
     Properties `hitTime` is lost, and the loader then treats the model as a creep.
   - Key every bone in every clip. A channel a clip leaves unkeyed keeps
     whatever the last clip left there, and the exporter bakes that in.
+    That includes location: the Swordmaster's `weapon` location was keyed
+    only in Death, which floated the sword 80 cm off the hand in the other
+    three clips depending on which clip Blender had evaluated last.
+  - Hide a bone at scale 0.001, not 0. The exporter samples whole matrices,
+    and a zero-scale matrix has no rotation, so the file gets an arbitrary
+    one (the arrow spun 82 degrees on the frame it was hidden).
+  - Run `tools/blender/check_anim.py` on the exported files afterwards: no
+    rotation or jitter flags is the bar.
