@@ -6,12 +6,6 @@ export function dist(a: Vec2, b: Vec2): number {
   return Math.hypot(dx, dy);
 }
 
-export function dist2(a: Vec2, b: Vec2): number {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return dx * dx + dy * dy;
-}
-
 export function angleTo(from: Vec2, to: Vec2): number {
   return Math.atan2(to.y - from.y, to.x - from.x);
 }

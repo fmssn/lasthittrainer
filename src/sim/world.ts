@@ -181,8 +181,8 @@ export class World {
   /**
    * Everything that sits between a rolled attack and the health bar: Quell,
    * armor, and `creep_irresolute` (melee lane creeps deal 25% less to heroes).
-   * It lives in one place so the damage preview, the bot's estimate and the
-   * actual hit can never disagree.
+   * It lives in one place so the bot's estimate and the actual hit can never
+   * disagree.
    *
    * Quell is attack damage, so it goes in before armor. It is enemy creeps
    * only: the tooltip says "non-hero units", towers are invulnerable here
@@ -204,11 +204,6 @@ export class World {
     const windup = attackPointTime(source.attackPoint, source.attackSpeedBonus);
     if (source.projectileSpeed <= 0) return windup;
     return windup + dist(source.pos, target.pos) / source.projectileSpeed;
-  }
-
-  /** HP the target is expected to have once everything already in flight lands. */
-  predictedHp(target: Unit): number {
-    return target.hp - target.incomingDamage;
   }
 
   /**
@@ -273,7 +268,6 @@ export class World {
 
   orderMove(unit: Unit, point: Vec2) {
     unit.moveTarget = { x: point.x, y: clamp(point.y, -LANE_HALF_WIDTH, LANE_HALF_WIDTH) };
-    unit.orderTargetId = null;
     unit.attackTargetId = null;
     unit.attackMove = false;
     this.cancelSwing(unit);
@@ -287,7 +281,6 @@ export class World {
     if (!this.canTarget(unit, target)) return;
     if (unit.attackTargetId === target.id && unit.phase === 'windup') return;
     // Re-targeting mid-swing restarts the wind-up rather than steering it.
-    unit.orderTargetId = target.id;
     unit.attackTargetId = target.id;
     unit.moveTarget = null;
     unit.attackMove = false;
@@ -296,7 +289,6 @@ export class World {
 
   orderAttackMove(unit: Unit, point: Vec2) {
     unit.moveTarget = { x: point.x, y: clamp(point.y, -LANE_HALF_WIDTH, LANE_HALF_WIDTH) };
-    unit.orderTargetId = null;
     unit.attackTargetId = null;
     unit.attackMove = true;
     this.cancelSwing(unit);
@@ -304,7 +296,6 @@ export class World {
 
   orderStop(unit: Unit) {
     unit.moveTarget = null;
-    unit.orderTargetId = null;
     unit.attackTargetId = null;
     unit.attackMove = false;
     this.cancelSwing(unit);
@@ -619,7 +610,6 @@ export class World {
       this.applyDamage(source, target, dmg);
       return;
     }
-    target.incomingDamage += dmg;
     this.projectiles.push({
       id: this.nextProjectileId++,
       sourceId: source.id,
@@ -639,14 +629,12 @@ export class World {
       const source = this.units.get(p.sourceId);
       if (!target || !target.alive) {
         // Projectiles in Dota keep flying and fizzle; the damage never lands.
-        if (target) target.incomingDamage = Math.max(0, target.incomingDamage - p.damage);
         this.projectiles.splice(i, 1);
         continue;
       }
       const d = dist(p.pos, target.pos);
       const step = p.speed * dt;
       if (step >= d) {
-        target.incomingDamage = Math.max(0, target.incomingDamage - p.damage);
         this.projectiles.splice(i, 1);
         if (source) this.applyDamage(source, target, p.damage, true);
         continue;
@@ -736,7 +724,6 @@ export class World {
 
     for (const u of this.units.values()) {
       if (u.attackTargetId === victim.id) u.attackTargetId = null;
-      if (u.orderTargetId === victim.id) u.orderTargetId = null;
       if (u.aggroTargetId === victim.id) {
         u.aggroTargetId = null;
         u.aggroTimer = 0;
@@ -752,9 +739,7 @@ export class World {
     u.phaseTimer = 0;
     u.attackCooldown = 0;
     u.attackTargetId = null;
-    u.orderTargetId = null;
     u.moveTarget = null;
-    u.incomingDamage = 0;
   }
 
   private reap() {
@@ -804,40 +789,7 @@ export class World {
     for (let i = this.floaters.length - 1; i >= 0; i--) {
       const f = this.floaters[i];
       f.age += dt;
-      f.pos.y -= f.rise * dt;
       if (f.age >= f.life) this.floaters.splice(i, 1);
     }
-  }
-
-  // ------------------------------------------------------------------ picking
-
-  /** Nearest valid target under the cursor, Dota-style click priority. */
-  unitAt(point: Vec2, forUnit: Unit): Unit | null {
-    let best: Unit | null = null;
-    let bestD = Infinity;
-    for (const u of this.units.values()) {
-      if (!u.alive || u.id === forUnit.id) continue;
-      const d = dist(point, u.pos);
-      if (d > u.radius + 16) continue;
-      if (d < bestD) {
-        bestD = d;
-        best = u;
-      }
-    }
-    return best;
-  }
-
-  nearestEnemy(u: Unit, range = acquisitionRange(u.kind)): Unit | null {
-    let best: Unit | null = null;
-    let bestD = range;
-    for (const o of this.units.values()) {
-      if (!o.alive || o.team === u.team) continue;
-      const d = dist(u.pos, o.pos);
-      if (d < bestD) {
-        bestD = d;
-        best = o;
-      }
-    }
-    return best;
   }
 }

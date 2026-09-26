@@ -140,7 +140,7 @@ export class Renderer3D {
   ) {
     this.canvas = document.createElement('canvas');
     this.canvas.className = 'stage3d';
-    // Under the 2D canvas, which stays on top as the pointer surface.
+    // Under #game, which stays on top as the pointer surface.
     container.insertBefore(this.canvas, before);
 
     this.stage = new Scene3D(this.canvas);
@@ -214,8 +214,24 @@ export class Renderer3D {
       }
     }
     // Nothing under the cursor still means the lane point may sit on a unit's
-    // feet — a click just short of a rig should grab it, as in the 2D view.
-    return best ?? world.unitAt(this.toWorld(screen), forUnit);
+    // feet — a click just short of a rig should grab it.
+    return best ?? this.unitAtFeet(this.toWorld(screen), world, forUnit);
+  }
+
+  /** Nearest unit whose hull, with a little slack, covers a lane point. */
+  private unitAtFeet(point: Vec2, world: World, forUnit: Unit): Unit | null {
+    let best: Unit | null = null;
+    let bestD = Infinity;
+    for (const u of world.units.values()) {
+      if (!u.alive || u.id === forUnit.id) continue;
+      const d = Math.hypot(point.x - u.pos.x, point.y - u.pos.y);
+      if (d > u.radius + 16) continue;
+      if (d < bestD) {
+        bestD = d;
+        best = u;
+      }
+    }
+    return best;
   }
 
   /** Zoom by mouse-wheel notches, positive out. */

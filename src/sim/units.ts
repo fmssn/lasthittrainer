@@ -164,7 +164,6 @@ export function spawnUnit(tpl: UnitTemplate, team: Team, pos: Vec2, rng: () => n
     bounty: Math.round(tpl.bountyMin + rng() * (tpl.bountyMax - tpl.bountyMin)),
     xp: tpl.xp,
     alive: true,
-    orderTargetId: null,
     attackTargetId: null,
     moveTarget: null,
     attackMove: false,
@@ -174,6 +173,5 @@ export function spawnUnit(tpl: UnitTemplate, team: Team, pos: Vec2, rng: () => n
     aggroTargetId: null,
     aggroTimer: 0,
     aggroCooldown: 0,
-    incomingDamage: 0,
   };
 }

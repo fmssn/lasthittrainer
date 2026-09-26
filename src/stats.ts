@@ -100,11 +100,3 @@ export function personalBest(runs: RunRecord[], run: RunRecord): RunRecord | nul
   if (comparable.length === 0) return null;
   return comparable.reduce((a, b) => (b.lastHits > a.lastHits ? b : a));
 }
-
-export function clearRuns() {
-  try {
-    localStorage.removeItem(KEY);
-  } catch {
-    // ignore
-  }
-}
