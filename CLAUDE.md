@@ -123,6 +123,7 @@ src/render3d/     The renderer: three.js stage + screen-space overlay
   effects.ts      Pooled impact sprites, driven by World.damageLog
   projectileView.ts  Oriented bolts with trails; flat travel, no arc
   renderer3d.ts   Renderer3D: scene + views + ground rings, and unit picking
+  outline.ts      The hover outline: a screen-space pass over the stage
   annotations.ts  Screen-space layer: health bars, aggro timer, floaters
 src/ui/           menu.ts, hud.ts, results.ts — plain DOM over the canvas
   inventory.ts    The six item slots, shared by the menu, HUD and results
@@ -210,7 +211,11 @@ exist.
 The drawing splits in two: ground-plane art (the selection ring, tower zones)
 is real geometry, while anything that must stay screen-sized and legible
 mid-swing (health bars, floaters) is drawn by `annotations.ts` on a 2D canvas
-over the stage.
+over the stage. The unit under the cursor is outlined by a screen-space pass
+(`outline.ts`): it is drawn flat into a mask and the pixels just outside it are
+lit, except where another unit stands in front. Every unit view is on
+`OCCLUDER_LAYER` for that depth test; the lane is not, or it would eat the
+bottom of every outline. There is no cursor ring on the ground.
 
 There are no training aids. A killable highlight, damage preview, deny line on
 the bars, an in-flight damage chunk, wind-up arc, range ring, a dashed line to
