@@ -25,6 +25,10 @@ npm run balance  # difficulty calibration for the bot (needs npm run dev)
 There is no linter. `npm run build` (i.e. `tsc --noEmit`) plus `npm run check`
 are the automated checks — run both after every change.
 
+`.github/workflows/ci.yml` runs the same two on every push to main and every
+PR, and deploys a green main to GitHub Pages. The deploy job is skipped while
+the repository is private, since Pages is only free on public repositories.
+
 `npm run check` (`tools/simcheck.mjs`) is not a test runner: it drives a real
 Chromium against the dev server and imports the actual sim modules through
 vite, then asserts numbers. That is what lets it exist without dragging a

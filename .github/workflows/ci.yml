@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run per branch. On a PR a new push makes the old run worthless, so cancel
+# it. On main let a running deploy finish: the queue keeps only the newest
+# pending run, so whatever lands last is what ends up live.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck and build
+        run: npm run build
+
+      # The tools default to the Chromium a Claude Code container ships at
+      # /opt/pw-browsers. A runner has none, so fetch playwright's own and
+      # point them at it through the CHROMIUM override they already read.
+      - name: Install Chromium
+        run: |
+          npx playwright install --with-deps chromium
+          echo "CHROMIUM=$(node -p "require('playwright').chromium.executablePath()")" >> "$GITHUB_ENV"
+
+      # simcheck imports the sim's .ts modules through vite's dev transform and
+      # drives the dev-only window.__lht handle, so it needs `vite`, not the
+      # built dist.
+      - name: Simulation checks
+        run: |
+          npm run dev -- --strictPort > vite.log 2>&1 &
+          timeout 60 bash -c 'until curl -sf http://localhost:5173/ > /dev/null; do sleep 1; done'
+          npm run check
+
+      - name: Dev server log
+        if: failure()
+        run: cat vite.log || true
+
+      - if: github.ref == 'refs/heads/main' && !github.event.repository.private
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
+
+  # GitHub Pages is free on public repositories only; on a private one it needs
+  # a paid plan. Skipped while the repository is private so main stays green.
+  deploy:
+    needs: check
+    if: github.ref == 'refs/heads/main' && !github.event.repository.private
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
