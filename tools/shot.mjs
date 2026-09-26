@@ -38,12 +38,13 @@ await page.screenshot({ path: `${dir}/${label}-menu.png` });
 
 await page.evaluate(() => {
   window.__lht.start({
-    heroId: 'shadow_fiend',
-    items: [],
+    heroId: 'frost_archer',
+    // A real opening buy, so the HUD inventory and the results strip are in frame.
+    items: ['tango', 'tango', 'quelling_blade', 'iron_branch', 'iron_branch', 'magic_stick'],
     duration: 600,
     deniesEnabled: true,
     enemyHero: true,
-    enemyHeroId: 'crystal_maiden',
+    enemyHeroId: 'swordmaster',
     enemyDifficulty: 3,
     aggroEnabled: true,
     showKillableHighlight: true,

@@ -4,6 +4,10 @@ A browser drill for Dota 2 last hitting and denying. Real 7.3x creep values, rea
 hero attack animations, a lane that behaves like a lane. Pick a hero, run a timed
 drill, get a score you can actually compare week to week.
 
+Two heroes for now, one melee and one ranged, because the feel of each has to be
+right before a third is worth adding: the **Swordmaster** and the **Frost
+Archer**. The names are this project's own; the numbers behind them are real.
+
 ```bash
 npm install
 npm run dev
@@ -33,7 +37,7 @@ Right-clicking never attacks your own units, same as the real game.
 ## The one idea worth knowing
 
 The window where a creep is exactly one hero hit from death is roughly half a
-second. Shadow Fiend's attack takes 0.4s of wind-up plus projectile travel — so
+second. The Frost Archer's attack takes 0.4s of wind-up plus arrow travel — so
 by the time a creep *looks* killable, it is already too late to click.
 
 That is why the "swing now" highlight in this trainer is predictive. It projects
@@ -55,13 +59,14 @@ check` asserts the whole table, so they cannot drift.
 
 - Creeps use 7.3x base stats with no per-minute scaling — a drill is always minute zero, which is also the hardest timing to learn.
 - Armor uses the real formula, `1 - 0.06a / (1 + 0.06|a|)`.
-- Attack point and attack interval both scale with attack speed, and heroes carry attack speed from agility at level 1 on top of their `BaseAttackSpeed`. Juggernaut's is 110 rather than 100, so his authored 0.33s attack point is really 0.23s in lane.
+- Attack point and attack interval both scale with attack speed, and heroes carry attack speed from agility at level 1 on top of their `BaseAttackSpeed`. The Swordmaster's is 110 rather than 100, so its authored 0.33s attack point is really 0.23s in lane.
 - Attack points are the real ones: 0.467s for a melee creep, 0.5s for a ranged one, 0.7s for siege. The wind-up roots you; the backswing is cancellable and never delays your next swing.
 - Melee lane creeps carry `creep_irresolute` and deal 25% less damage to heroes. Ranged and siege creeps do not — which is why pulling a ranged creep onto yourself hurts and standing in a melee wave does not.
 - Creeps are sticky: one that is standing and swinging holds its target until it dies or leaves attack range, and prefers whatever is already in range over chasing. Lane creeps rank other creeps above heroes, which is why you can stand inside an engaged wave untouched. Siege creeps invert it and go for buildings first.
 - A target that dies during your wind-up costs you the swing, and the run counts those.
 - Hero damage is base plus the level 1 primary attribute contribution. HP, armor and attack speed are derived from attributes the same way.
-- Starting items are optional and come from `items.txt`: Quelling Blade, Iron Branch, Faerie Fire, Slippers, Mantle, Gauntlets and Circlet, within 600 starting gold and six slots. Stat items go through the attribute rules, so Slippers speed up the swing. Quelling Blade is +8 damage for melee and +4 for ranged, against enemy creeps only — not on denies. Only your hero carries them.
+- Starting items are optional and come from `items.txt`: Quelling Blade, Iron Branch, Faerie Fire, Tango, Magic Stick, Slippers, Mantle, Gauntlets and Circlet, within 600 starting gold and six slots. Stat items go through the attribute rules, so Slippers speed up the swing. Quelling Blade is +8 damage for melee and +4 for ranged, against enemy creeps only — not on denies. Tangos stack into one slot, three charges a purchase, as they do in game. Tango and Magic Stick cannot be used; they are in the shop so a real opening buy fits the 600 gold. Only your hero carries items, and they show in an inventory in the HUD.
+- The item icons are drawn for this project in the style of the original mod's Warcraft III buttons. They are not the game's own art.
 - Tier 1 towers are present and **invulnerable on purpose**: they anchor the lane so a run cannot death-spiral, and they punish diving, but a tower falling would make every run a different game.
 - Turn rate is radians per 0.03s, so a 180° turn at 0.6 takes 0.157s. You have to be facing a creep before the swing starts.
 
@@ -90,9 +95,9 @@ npm run balance  # difficulty calibration for the enemy laner
 ```
 
 `npm run balance` drives both heroes with the same laning AI and holds your
-side at level 3. Level 3 against level 3 comes out even — 8.7 last hits each —
-which is the check that matters: a lane where one side quietly farms better
-would flatter you and teach you nothing.
+side at level 3. Level 3 against level 3 should come out even, and that is the
+check that matters: a lane where one side quietly farms better would flatter
+you and teach you nothing.
 
 `npm run check` drives a real Chromium against the dev server and imports the
 sim modules through vite, then asserts numbers — the reference values, swing

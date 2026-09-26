@@ -1,6 +1,7 @@
 import { heroById } from '../sim/heroes.ts';
 import type { DrillConfig } from '../sim/config.ts';
 import { loadoutLabel } from '../sim/items.ts';
+import { itemStripHtml } from './inventory.ts';
 import type { Stats } from '../sim/world.ts';
 import { buildRecord, loadRuns, personalBest, saveRun } from '../stats.ts';
 
@@ -35,7 +36,9 @@ export class Results {
     this.el.innerHTML = `
       <div class="results-inner">
         <header>
-          <span class="results-hero"><i style="background:${hero.color}"></i>${hero.name}${config.items.length ? ` · ${loadoutLabel(config.items)}` : ''}</span>
+          <span class="results-hero"><i style="background:${hero.color}"></i>${hero.name}${
+            config.items.length ? `<span class="results-items" title="${loadoutLabel(config.items)}">${itemStripHtml(config.items)}</span>` : ''
+          }</span>
           <h1>${stats.lastHits} last hits${config.deniesEnabled ? ` · ${stats.denies} denies` : ''}</h1>
           ${
             improved === null

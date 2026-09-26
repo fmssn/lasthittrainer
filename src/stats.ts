@@ -1,6 +1,7 @@
 import type { DrillConfig } from './sim/config.ts';
 import type { Stats } from './sim/world.ts';
 import type { ItemId } from './sim/items.ts';
+import { canonicalHeroId } from './sim/heroes.ts';
 
 const KEY = 'lht.runs.v1';
 const MAX_RUNS = 200;
@@ -55,7 +56,10 @@ export function loadRuns(): RunRecord[] {
     const raw = localStorage.getItem(KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as RunRecord[]) : [];
+    if (!Array.isArray(parsed)) return [];
+    // Runs saved under a hero's old id are read back under its new one, so a
+    // personal best survives the rename. A retired hero keeps its id.
+    return (parsed as RunRecord[]).map((r) => ({ ...r, heroId: canonicalHeroId(r.heroId) ?? r.heroId }));
   } catch {
     return [];
   }

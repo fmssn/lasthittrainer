@@ -32,7 +32,7 @@ const ACQUISITION_RANGE_BY_KIND: Record<UnitKind, number> = {
   ranged_creep: 600,
   siege_creep: 800,
   tower: 700,
-  // Heroes vary (Juggernaut 600, Sniper 950); they never auto-acquire in this
+  // Heroes vary, from 600 to 950; they never auto-acquire in this
   // drill, so one representative value is enough.
   hero: 800,
 };
