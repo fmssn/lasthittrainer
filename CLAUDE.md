@@ -316,10 +316,11 @@ nowhere else; if the lane is muddy, turn the lane down, never the rewards up.
 
 ## Known gaps
 
-- The mix in `sounds.ts` is the plan's starting levels and has not been tuned
-  by ear yet. The two tests for it: every last hit is audible without watching
-  the screen, and a creep's hits on your target can be told from the rest of
-  the lane, on laptop speakers and on headphones.
+- Only the creep level in `sounds.ts` has been tuned by ear (`CREEP_DB`, from
+  -10 down to -22); the rest is the plan's starting levels. The two tests for
+  it: every last hit is audible without watching the screen, and a creep's
+  hits on your target can be told from the rest of the lane, on laptop
+  speakers and on headphones.
 - One take per sound. Where docs/sounds.md asks for two or three variations,
   the pitch and level jitter on every play stands in for them.
 - `vite build` only picks up `index.html`; `slice3d.html` is dev-only until it is
