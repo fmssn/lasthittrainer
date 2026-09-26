@@ -55,44 +55,48 @@ heroes carry), and it is how you hear that you started a swing too early.
 - **Anything Dota does not play:** a "killable now" ping, a wave-spawn chime,
   a miss sound. The same reason the overlay aids were removed.
 
-## The model: Stable Audio 3
+## The model: Stable Audio 3 Medium
 
-Researched 2026-09-26. Use **Stable Audio 3**, natively supported in ComfyUI
-since v0.22.0 (its templates are under Audio in the template browser).
+Researched 2026-09-26, for generating on an H100. Use **Stable Audio 3
+Medium**, natively supported in ComfyUI since v0.22.0 (its templates are under
+Audio in the template browser).
 
-- **Medium** (`stable_audio_3_medium_base.safetensors`) is the one to use if
-  you have a GPU. It scores best on sound effects of the released weights in
-  Stability's own paper (FAD 0.369 against Small-SFX's 0.395, lower is
-  better), and it handles SFX and music in one model. Use the **Medium Base**
-  template, not **Medium**: the plain Medium template runs your text through
-  Qwen to "expand" it, which is the opposite of what a tightly written one-shot
-  prompt wants.
-- **Small-SFX** (`stable_audio_3_small_sfx.safetensors`, 2.3 GB) is the
-  fallback. It is SFX-only, runs on a CPU and is very fast. It is good for
-  auditioning a prompt, then re-rendering the keepers with Medium.
-- Both need `t5gemma_b_b_ul2.safetensors` in `models/text_encoders/`. The
-  checkpoints go in `models/checkpoints/`. The weights are gated on Hugging
+- **Use the Medium Base template** (`stable_audio_3_medium_base.safetensors`),
+  not Medium. The plain Medium template runs your text through Qwen to
+  "expand" it, which is the opposite of what a tightly written one-shot prompt
+  wants.
+- It needs `t5gemma_b_b_ul2.safetensors` in `models/text_encoders/`. The
+  checkpoint goes in `models/checkpoints/`. The weights are gated on Hugging
   Face: accept the licence on the model page first.
 - **Licence:** Stability AI Community License. You own what it generates, and
   commercial use is free below $1M annual revenue after registering. That
   covers a public GitHub Pages build.
 - It outputs **44.1 kHz stereo**, which is what the drill wants.
 
-Alternatives considered:
+Medium is also the biggest option, because nothing larger is worth running:
+
+- **SA3 Large** scores best in Stability's paper (FAD 0.358 against Medium's
+  0.369, lower is better), but its weights are not released.
+- **Small-SFX** is not needed on an H100. It scores lower (0.395) and exists
+  to run on a CPU.
+- **HunyuanVideo-Foley XXL** is bigger (48 kHz, 20 GB), but it is built to
+  score a video, not to follow a text prompt alone. Its licence also does not
+  apply in the EU, the UK or South Korea.
 - **Woosh** (Sony AI) is SFX-specialised, but its weights are CC-BY-NC, so
-  non-commercial only. It needs a custom node, and it scores below SA3 on
-  SA3's benchmark (FAD 0.58).
-- **Stable Audio Open 1.0** is also native, and one tester found it sounds
-  richer, but it is about 50x slower. It is worth a try for `lane_ambience` if
-  SA3's attempt sounds thin.
+  non-commercial only. It also scores below SA3 on SA3's benchmark
+  (FAD 0.58).
 - **TangoFlux** and **AudioLDM** are older and score lower.
-- **ElevenLabs** is available as a ComfyUI API node, but it is a paid cloud
-  service. Only worth it if something above will not come out right.
+- **ElevenLabs** is a paid cloud API node. It is the last resort if one
+  sound will not come out right.
+
+What the H100 buys is not a bigger model but many more tries, plus a second
+model to try them on.
 
 ### Settings
 
 - **Steps 8, CFG 1.0, sampler `pingpong`.** SA3 is distilled, so its guidance
-  is baked in, and more steps or higher CFG do not help.
+  is baked in, and more steps or higher CFG do not help. Medium takes well
+  under a second per clip here.
 - **CFG 1 means a negative prompt does nothing.** Put everything you do *not*
   want into the positive prompt as what you do want: "dry, close-miked",
   never "no reverb" in a negative box.
@@ -100,12 +104,29 @@ Alternatives considered:
   prefix, and Stability's paper says it significantly improves results.
 - **Generate about 2 s even for a 0.3 s sound**, then trim. Very short
   requests tend to come out mushy or cut off. Exceptions: 5 s for the horn and
-  `run_end`, and 45–60 s for the ambience.
-- **Batch 8 seeds per prompt** and keep the best 2–3 as the variations. That
-  is faster than rewording, and different seeds of one prompt match each other
+  `run_end`, and 60 s for the ambience.
+- **Batch 32 seeds per prompt** and keep the best 2–3 as the variations.
+  That costs well under a minute per prompt here, and seeds are a better use
+  of the GPU than rewording: different seeds of one prompt match each other
   in tone, which is what variations should do.
 - Write down the seed of every keeper next to the file, so it can be
   re-rendered later.
+
+### Second opinion: Stable Audio Open 1.0
+
+Stable Audio Open 1.0 is also native in ComfyUI. It is older, but one tester
+found it richer, and it is about 50x slower, which does not matter on an H100.
+Unlike SA3 it runs real classifier-free guidance, so it takes a negative
+prompt. Use it for any sound where none of the 32 SA3 seeds are right, and
+try it for `lane_ambience` in any case.
+
+- Start from ComfyUI's Stable Audio Open template and raise steps to 100.
+- **Drop the `TrackType: SFX,` prefix.** Open was not trained with it.
+  Otherwise the prompts below work as they are.
+- Negative prompt: `reverb, echo, music, melody, speech, voice, background noise, hiss, low quality, distorted`.
+  Leave out `reverb, echo` for the horn, `run_end` and the ambience.
+- 16 seeds per prompt is enough, since each one takes longer.
+- Same licence as SA3.
 
 ### How the prompts are built
 
