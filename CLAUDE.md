@@ -62,9 +62,9 @@ table is the opponent. It is a measurement, not a pass/fail, and it catches the
 one class of bug nothing else here can: a side bias. A lane where Radiant
 quietly farms better than Dire would flatter you for three minutes and teach
 you nothing, and staring at the code does not find it. Current reading, with
-the Frost Archer on both sides — level 3 against level 3 comes out 4.3 to
-10.3 last hits, gap 6.0, and the ladder runs 1.7 -> 6.0 -> 10.3 -> 13.0 ->
-14.0. That gap is open, not accepted: three seeds exaggerate it, but over
+the Frost Archer on both sides — level 3 against level 3 comes out 5.3 to
+10.3 last hits, gap 5.0, and the ladder runs 1.7 -> 5.0 -> 10.3 -> 12.7 ->
+15.0. That gap is open, not accepted: three seeds exaggerate it, but over
 twelve it is still 5.3 to 7.5 (Swordmaster mirror 4.1 to 5.5) with Dire ahead
 in most seeds, so the lane leans Dire. Before the roster was cut the harness
 mirrored a hero no longer in it, which read 0.0 on the same seeds. Re-run it
@@ -166,6 +166,11 @@ tools/blender/    build_units.py builds the KayKit creeps in public/models/units
   range, then prefers whatever is already in range over chasing. A swing already
   under way is never re-aimed, because the release reads `attackTargetId` at
   release time and would otherwise hand the damage to the new target.
+- Nothing shoves anything. A unit walking into another slides round it or
+  stops against it, and the one standing there never moves: that is what
+  makes bodyblocking possible. Bodies meet at `bodyRadius(kind)`, which
+  follows the drawn rigs and is wider than Valve's hulls; `Unit.radius` stays
+  the hull, because attack range is measured to it.
 
 ### Performance
 
