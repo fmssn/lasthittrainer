@@ -28,6 +28,8 @@ export interface UnitTemplate {
   xp: number;
   /** Heroes carry attack speed from agility; creeps and towers have none. */
   attackSpeedBonus?: number;
+  /** Only heroes carrying a Quelling Blade have this. */
+  creepDamageBonus?: number;
 }
 
 /**
@@ -158,6 +160,7 @@ export function spawnUnit(tpl: UnitTemplate, team: Team, pos: Vec2, rng: () => n
     attackBackswing: tpl.attackBackswing,
     projectileSpeed: tpl.projectileSpeed,
     attackSpeedBonus: tpl.attackSpeedBonus ?? 0,
+    creepDamageBonus: tpl.creepDamageBonus ?? 0,
     bounty: Math.round(tpl.bountyMin + rng() * (tpl.bountyMax - tpl.bountyMin)),
     xp: tpl.xp,
     alive: true,

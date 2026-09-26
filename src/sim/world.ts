@@ -25,6 +25,7 @@ import {
 } from './constants.ts';
 import { MELEE_CREEP, RANGED_CREEP, SIEGE_CREEP, TOWER, resetIds, rollDamage, spawnUnit } from './units.ts';
 import { heroById } from './heroes.ts';
+import { legalLoadout } from './items.ts';
 import { angleDelta, angleTo, clamp, dist, makeRng } from './math.ts';
 import type { DrillConfig } from './config.ts';
 import { ENEMY_PROFILES } from './config.ts';
@@ -49,6 +50,10 @@ export const HERO_RESPAWN_TIME = 6;
  * which this drill does not have: waves spawn into open lane.
  */
 const SLIDE = 0.45;
+
+function isCreep(u: Unit): boolean {
+  return u.kind === 'melee_creep' || u.kind === 'ranged_creep' || u.kind === 'siege_creep';
+}
 
 /**
  * How hard a unit is to shove. A hero outweighs a lane creep by enough to hold
@@ -132,7 +137,7 @@ export class World {
     this.rng = makeRng(config.seed);
     resetIds();
 
-    const heroTpl = heroById(config.heroId);
+    const heroTpl = heroById(config.heroId, legalLoadout(config.items));
     this.player = spawnUnit(heroTpl, 'radiant', { x: LANE_CENTER - 480, y: 0 }, this.rng);
     this.units.set(this.player.id, this.player);
 
@@ -174,12 +179,19 @@ export class World {
   }
 
   /**
-   * Armor, plus every flat multiplier that sits between a rolled attack and the
-   * health bar. Today that is just `creep_irresolute`: melee lane creeps deal
-   * 25% less to heroes. It lives in one place so the damage preview, the bot's
-   * estimate and the actual hit can never disagree.
+   * Everything that sits between a rolled attack and the health bar: Quell,
+   * armor, and `creep_irresolute` (melee lane creeps deal 25% less to heroes).
+   * It lives in one place so the damage preview, the bot's estimate and the
+   * actual hit can never disagree.
+   *
+   * Quell is attack damage, so it goes in before armor. It is enemy creeps
+   * only: the tooltip says "non-hero units", towers are invulnerable here
+   * anyway, and it does not apply to denies.
    */
   private applyModifiers(source: Unit, target: Unit, raw: number): number {
+    if (source.creepDamageBonus > 0 && target.team !== source.team && isCreep(target)) {
+      raw += source.creepDamageBonus;
+    }
     let dmg = raw * armorMultiplier(target.armor);
     if (source.kind === 'melee_creep' && target.kind === 'hero') {
       dmg *= 1 - MELEE_CREEP_HERO_DAMAGE_PENALTY;

@@ -1,6 +1,7 @@
 import { HEROES, heroById } from '../sim/heroes.ts';
 import { DEFAULT_CONFIG, type DrillConfig } from '../sim/config.ts';
 import { attackInterval, attackPointTime } from '../sim/constants.ts';
+import { ITEMS, INVENTORY_SLOTS, STARTING_GOLD, canAdd, itemById, legalLoadout, loadoutCost, loadoutLabel, type ItemId } from '../sim/items.ts';
 import { loadRuns, type RunRecord } from '../stats.ts';
 
 const DURATIONS = [60, 120, 180, 300];
@@ -19,6 +20,7 @@ export class Menu {
     private onStart: (config: DrillConfig) => void,
   ) {
     this.config = { ...DEFAULT_CONFIG, ...loadConfig() };
+    this.config.items = legalLoadout(this.config.items);
     this.el = document.createElement('div');
     this.el.className = 'screen menu';
     root.appendChild(this.el);
@@ -43,6 +45,8 @@ export class Menu {
   private render() {
     const c = this.config;
     const runs = loadRuns().slice(-6).reverse();
+    const gold = loadoutCost(c.items);
+    const equipped = heroById(c.heroId, c.items);
 
     this.el.innerHTML = `
       <div class="menu-inner">
@@ -54,10 +58,13 @@ export class Menu {
         <section class="block">
           <h2>Hero</h2>
           <div class="hero-grid">
-            ${HEROES.map((h) => {
+            ${HEROES.map((base) => {
               // Effective, not authored. Agility divides both the interval and
               // the wind-up, so quoting the raw numbers off the hero file tells
-              // you a swing is slower than the one you are about to make.
+              // you a swing is slower than the one you are about to make. The
+              // same goes for items: Slippers make the swing you are timing
+              // shorter, so the card quotes the hero as you would spawn.
+              const h = heroById(base.id, c.items);
               const interval = attackInterval(h.baseAttackTime, h.attackSpeedBonus).toFixed(2);
               const point = attackPointTime(h.attackPoint, h.attackSpeedBonus).toFixed(2);
               return `
@@ -66,13 +73,44 @@ export class Menu {
                 <span class="hero-name">${h.name}</span>
                 <span class="hero-pips" title="timing difficulty">${pips(h.difficulty)}</span>
                 <span class="hero-stats">
-                  ${h.attackRange} range · ${point}s point · ${interval}s attack
+                  ${h.damageMin}–${h.damageMax} dmg${h.creepDamageBonus ? ` (+${h.creepDamageBonus} vs creeps)` : ''}
+                  · ${h.attackRange} range · ${point}s point · ${interval}s attack
                   ${h.projectileSpeed ? ` · ${h.projectileSpeed} proj` : ' · melee'}
                 </span>
                 <span class="hero-note">${h.note}</span>
               </button>`;
             }).join('')}
           </div>
+        </section>
+
+        <section class="block">
+          <h2>Starting items</h2>
+          <div class="inventory">
+            ${Array.from({ length: INVENTORY_SLOTS }, (_, i) => {
+              const def = c.items[i] ? itemById(c.items[i]) : undefined;
+              return def
+                ? `<button class="slot filled" data-remove-item="${i}" title="${def.name} — click to sell">${def.short}</button>`
+                : `<span class="slot"></span>`;
+            }).join('')}
+            <span class="gold ${gold > 0 ? 'spent' : ''}">${gold} / ${STARTING_GOLD} gold</span>
+          </div>
+          <div class="chip-row small">
+            ${ITEMS.map(
+              (it) =>
+                `<button class="chip" data-add-item="${it.id}" ${canAdd(c.items, it.id) ? '' : 'disabled'}>${it.name} <span class="cost">${it.cost}</span></button>`,
+            ).join('')}
+            ${c.items.length ? `<button class="chip" data-clear-items>Clear</button>` : ''}
+          </div>
+          <p class="aside">
+            ${
+              c.items.length
+                ? `${equipped.name} spawns with ${loadoutLabel(c.items)}: ${equipped.damageMin}–${equipped.damageMax} damage${
+                    equipped.creepDamageBonus ? `, ${equipped.damageMin + equipped.creepDamageBonus}–${equipped.damageMax + equipped.creepDamageBonus} against enemy creeps` : ''
+                  }.`
+                : 'Nothing bought: bare level 1 stats.'
+            }
+            Quelling Blade is +8 for melee and +4 for ranged, against enemy creeps only — it does not help a deny. Your hero only; the bot starts empty-handed.
+          </p>
         </section>
 
         <section class="block">
@@ -163,6 +201,19 @@ export class Menu {
         this.set('enemyHeroId', n.dataset.enemyHero!);
       }),
     );
+    this.el.querySelectorAll<HTMLElement>('[data-add-item]').forEach((n) =>
+      n.addEventListener('click', () => {
+        const id = n.dataset.addItem as ItemId;
+        if (canAdd(this.config.items, id)) this.set('items', [...this.config.items, id]);
+      }),
+    );
+    this.el.querySelectorAll<HTMLElement>('[data-remove-item]').forEach((n) =>
+      n.addEventListener('click', () => {
+        const i = Number(n.dataset.removeItem);
+        this.set('items', this.config.items.filter((_, j) => j !== i));
+      }),
+    );
+    this.el.querySelector('[data-clear-items]')?.addEventListener('click', () => this.set('items', []));
     this.el.querySelectorAll<HTMLElement>('[data-duration]').forEach((n) =>
       n.addEventListener('click', () => this.set('duration', Number(n.dataset.duration))),
     );
@@ -194,7 +245,9 @@ function runRow(r: RunRecord): string {
     <span class="run-hero"><i style="background:${hero.color}"></i>${hero.name}</span>
     <span class="run-score"><b>${r.lastHits}</b> LH${r.deniesEnabled ? ` · <b>${r.denies}</b> DN` : ''}</span>
     <span class="run-acc">${Math.round(r.accuracy * 100)}%</span>
-    <span class="run-meta">${r.duration / 60}m${r.enemyHero ? ` · vs ${DIFFICULTY_NAMES[r.enemyDifficulty].toLowerCase()}` : ' · solo'}</span>
+    <span class="run-meta">${r.duration / 60}m${r.enemyHero ? ` · vs ${DIFFICULTY_NAMES[r.enemyDifficulty].toLowerCase()}` : ' · solo'}${
+      r.items?.length ? ` · ${loadoutCost(r.items)}g items` : ''
+    }</span>
     <span class="run-when">${when}</span>
   </div>`;
 }

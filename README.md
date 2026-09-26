@@ -55,16 +55,17 @@ check` asserts the whole table, so they cannot drift.
 
 - Creeps use 7.3x base stats with no per-minute scaling — a drill is always minute zero, which is also the hardest timing to learn.
 - Armor uses the real formula, `1 - 0.06a / (1 + 0.06|a|)`.
-- Attack point and attack interval both scale with attack speed, and heroes carry attack speed from agility at level 1. Juggernaut's authored 0.33s attack point is really 0.25s in lane.
+- Attack point and attack interval both scale with attack speed, and heroes carry attack speed from agility at level 1 on top of their `BaseAttackSpeed`. Juggernaut's is 110 rather than 100, so his authored 0.33s attack point is really 0.23s in lane.
 - Attack points are the real ones: 0.467s for a melee creep, 0.5s for a ranged one, 0.7s for siege. The wind-up roots you; the backswing is cancellable and never delays your next swing.
 - Melee lane creeps carry `creep_irresolute` and deal 25% less damage to heroes. Ranged and siege creeps do not — which is why pulling a ranged creep onto yourself hurts and standing in a melee wave does not.
 - Creeps are sticky: one that is standing and swinging holds its target until it dies or leaves attack range, and prefers whatever is already in range over chasing. Lane creeps rank other creeps above heroes, which is why you can stand inside an engaged wave untouched. Siege creeps invert it and go for buildings first.
 - A target that dies during your wind-up costs you the swing, and the run counts those.
 - Hero damage is base plus the level 1 primary attribute contribution. HP, armor and attack speed are derived from attributes the same way.
+- Starting items are optional and come from `items.txt`: Quelling Blade, Iron Branch, Faerie Fire, Slippers, Mantle, Gauntlets and Circlet, within 600 starting gold and six slots. Stat items go through the attribute rules, so Slippers speed up the swing. Quelling Blade is +8 damage for melee and +4 for ranged, against enemy creeps only — not on denies. Only your hero carries them.
 - Tier 1 towers are present and **invulnerable on purpose**: they anchor the lane so a run cannot death-spiral, and they punish diving, but a tower falling would make every run a different game.
 - Turn rate is radians per 0.03s, so a 180° turn at 0.6 takes 0.157s. You have to be facing a creep before the swing starts.
 
-What is deliberately not here: experience, levels, items, abilities, fog of war,
+What is deliberately not here: experience, levels, items beyond a starting buy, abilities, fog of war,
 runes, neutral camps and high ground. This is a last-hit drill, not a laning
 simulator.
 

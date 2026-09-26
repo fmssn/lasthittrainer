@@ -667,3 +667,61 @@ kbd {
   font: 700 46px var(--display);
   margin: 0 0 20px;
 }
+
+/* starting items */
+
+.inventory {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.slot {
+  flex: 0 1 48px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  font: 700 12px var(--font);
+  color: var(--accent);
+}
+
+.slot.filled {
+  border-style: solid;
+  background: var(--panel-solid);
+  cursor: pointer;
+}
+
+.slot.filled:hover {
+  border-color: var(--dire);
+}
+
+.gold {
+  margin-left: auto;
+  padding-left: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.gold.spent {
+  color: var(--gold);
+}
+
+.chip .cost {
+  color: var(--gold);
+  opacity: 0.8;
+  margin-left: 4px;
+}
+
+.chip:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.chip:disabled:hover {
+  border-color: var(--line);
+  color: var(--muted);
+}
