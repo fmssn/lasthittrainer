@@ -23,6 +23,12 @@ npm run balance  # difficulty calibration for the bot (needs npm run dev)
 npm run model    # regenerate public/models/melee_creep.glb (needs Blender 4.0+)
 ```
 
+The KayKit creep models in `public/models/units/` are built separately, with
+the pinned Blender and packs from `tools/fetch_assets.sh`:
+`<blender> --background --python tools/blender/build_units.py` (`--only
+melee_creep` for one look, `--renders DIR` for contact sheets under `xvfb-run`).
+It checks every file it writes and two builds are byte-identical.
+
 The three browser harnesses drive the Chromium a Claude Code container ships at
 `/opt/pw-browsers`; anywhere else they fall back to playwright's own, which
 `npx playwright install chromium` fetches once. `CHROMIUM` overrides both
@@ -107,13 +113,12 @@ src/render3d/     The renderer: three.js stage + screen-space overlay
   unitView.ts     One animated rig; picks a clip from sim state
   siegeView.ts    The catapult. Its own geometry, no skeleton, arm driven by
                   the sim's attack phases.
-  weapons.ts      Procedural kit bolted onto the rig: swords, bows, helms,
-                  hoods, crowns, shields, capes
+  weapons.ts      Procedural hero kit bolted onto the box rig: sword or bow,
+                  crown, pauldrons, cape
   effects.ts      Pooled impact sprites, driven by World.damageLog
   projectileView.ts  Oriented bolts with trails; flat travel, no arc
   renderer3d.ts   Renderer3D: scene + views + ground rings, and unit picking
   annotations.ts  Screen-space layer: health bars, windup arc, floaters
-  targetAids.ts   isPlayerTarget — the rule every training aid keys off
 src/ui/           menu.ts, hud.ts, results.ts — plain DOM over the canvas
   inventory.ts    The six item slots, shared by the menu, HUD and results
   itemIcons.ts    Item icons as SVG, in the style of the WC3 buttons
@@ -121,8 +126,9 @@ src/input.ts      Dota-style mouse/keyboard mapping
 src/stats.ts      RunRecord persistence in localStorage (key `lht.runs.v1`)
 src/main.ts       Entry point: state machine (menu/playing/paused/results) + loop
 src/slice3d.ts    Debug entry point: unattended sim, clip histogram, free look
-tools/blender/    Headless Blender script that generates public/models/melee_creep.glb,
-                  and heroes.blend, the hand-built hero models (exported by hand)
+tools/blender/    make_creep.py builds public/models/melee_creep.glb (the box rig);
+                  build_units.py builds the KayKit creeps in public/models/units/;
+                  heroes.blend holds the hand-built heroes in public/models/heroes/
 ```
 
 ### Simulation rules
@@ -175,8 +181,8 @@ tools/blender/    Headless Blender script that generates public/models/melee_cre
 Measured over 45 seconds of a level-5 lane: peak 210 draw calls, 16k triangles,
 10 rigs. That was before the hero models. A Swordmaster is about 14.8k triangles
 in 29 primitives and a Frost Archer 9.8k in 40, and the shadow pass draws each
-again, so a Swordmaster mirror comes to about 270 calls and 74k triangles. That is nothing for a real GPU, but
-it is where the budget now goes. Rocks and trees are one instanced mesh each. The 220 impact sprites are
+again, so a Swordmaster mirror comes to about 270 calls and 74k triangles.
+That is nothing for a real GPU, but it is where the budget now goes. Rocks and trees are one instanced mesh each. The 220 impact sprites are
 individual draw calls, which is the one thing here that could scale badly, but
 it never gets near saturation in practice — so it stays simple.
 
@@ -192,10 +198,16 @@ are gone, along with the menu's renderer picker. Reach for git history rather
 than reintroducing the abstraction for a second implementation that does not
 exist.
 
-The drawing splits in two: ground-plane art (range rings, tower zones, the
-killable pulse) is real geometry, while anything that must stay screen-sized and
-legible mid-swing (health bars, the deny line, the damage preview, the windup
-arc, floaters) is drawn by `annotations.ts` on a 2D canvas over the stage.
+The drawing splits in two: ground-plane art (the selection ring, tower zones)
+is real geometry, while anything that must stay screen-sized and legible
+mid-swing (health bars, floaters) is drawn by `annotations.ts` on a 2D canvas
+over the stage.
+
+There are no training aids. A killable highlight, damage preview, deny line on
+the bars, an in-flight damage chunk, wind-up arc, range ring, a dashed line to
+your attack target and an A-key hint that lit up over a denyable creep all existed and were removed as distracting: the drill should
+look like the game, so the timing is read off the creep and not the overlay.
+Do not add them back without being asked.
 Sim→three mapping is fixed in `scene.ts`: sim `(x, y)` → three `(x, 0, y)`, +Y up.
 
 `#game` is the pointer surface: it stays transparent and the stage canvases are
@@ -207,29 +219,35 @@ cursor looks like it is over — aiming at a creep's chest resolves to a lane po
 tens of units behind its feet. The cursor ray is tested against an upright
 cylinder per unit instead, so the whole visible body is clickable.
 
-`melee_creep.glb` is a hard startup dependency: `main.ts` loads it before
-building the renderer and shows a fatal message if it fails, since there is no
-longer a 2D path to fall back to. Hero models (`public/models/<heroId>.glb`,
-listed in `HERO_MODEL_URLS` and in `tools/pack-artifact.mjs`) are just as fatal,
-because falling back to the creep rig would show the wrong swing timing.
+The models are a hard startup dependency: `main.ts` loads `melee_creep.glb`,
+the four KayKit creep files and one model per hero before building the renderer,
+and shows a fatal message if any fails, since there is no longer a 2D path to
+fall back to. A missing hero model is as fatal as a creep: falling back to the
+box rig would show the wrong swing timing.
 
-A hero model is *bespoke*: its armature carries `hitTime` (seconds into the
-unscaled Attack clip where the blow lands) as a custom property, exported as
-glTF extras. `loadRig` reads it, and the view rescales the swing so that instant
-lands on the sim's damage tick, the same way the creep's constant does. A bespoke
-model wears its own gear, so no kit goes on, and only its `Team` material takes
-the team tint. The renderer finds a hero's model by matching `Unit.name` against
-`HEROES`, since the sim carries no render-only hero id. Both heroes have one, so
-the hero entries in `weapons.ts`'s kit are only a fallback now. A hero's arrow
-leaves from `HERO_LAUNCH` in `projectileView.ts`, the height of the Frost
-Archer's bow at full draw, not from a creep's shoulder.
+Melee and ranged creeps are KayKit skeletons (CC0), one file per kind and team,
+built by `tools/blender/build_units.py` with the team colour in the atlas. They
+read apart by weapon (blade and shield against a staff and a caster's hat),
+which is a gameplay concern, not a cosmetic one: a ranged creep has 300 HP and
+a melee one 550, so which is which decides whether a swing is a last hit. Their
+Attack clip carries its contact time and their Walk clip its stride in glTF
+extras (`hitTime`, `groundSpeed`), which `loadKayKitCreep` refuses to load
+without.
 
-Every other unit except the siege creep and the tower shares that one rig and is told
-apart by procedural kit (`weapons.ts`) rather than by scale and tint alone. That
-is a gameplay concern, not a cosmetic one: a ranged creep has 300 HP and a melee
-one 550, so which is which decides whether a swing is a last hit. Headgear is
-kept narrower than the skull — at a 57 degree camera pitch a cap sized to the
-head becomes a plate covering the whole unit from above.
+Each hero has a model of its own, `public/models/heroes/<heroId>.glb`, loaded
+for every id in `HEROES`. The armature carries `hitTime` (seconds into the
+unscaled Attack clip where the blow lands, or the arrow leaves) as a custom
+property, exported as node extras, and `loadHero` refuses a file without it.
+A hero model wears its own gear, so no procedural kit goes on, and only its
+`Team` material takes the team tint. The renderer finds a hero's model by
+matching `Unit.name` against `HEROES`, since the sim carries no render-only hero
+id. A hero's arrow leaves from `HERO_LAUNCH` in `projectileView.ts`, the height
+of the Frost Archer's bow at full draw, not from a creep's shoulder.
+
+The box rig and its kit (`weapons.ts`) are left as the fallback for anything
+without a model. Headgear there is kept narrower than the skull — at a 57 degree
+camera pitch a cap sized to the head becomes a plate covering the whole unit
+from above.
 
 `World.damageLog` is simulation output, not a drawing instruction, and the
 renderer follows it by `seq` to place impacts. The sim still owns `floaters`,
@@ -271,12 +289,13 @@ state should go in the renderer.
   around a lane centre of 3000.
 - Attack backswing values are community-measured, not from the scripts — Dota
   reads them off the attack animation, which the scripts do not encode.
-- The creep rig has four clips, so a ranged creep plays the same club swing a
-  melee one does. The bow and hood carry the read instead.
+- The box rig has four clips, so anything drawn with it plays the same club
+  swing, bow or not. The KayKit creeps and the heroes have their own: the
+  ranged creep casts and the Frost Archer draws and looses.
 - `public/models/melee_creep.glb` is generated by `tools/blender/make_creep.py`
   and committed. Regenerate with `npm run model`, which runs:
   `blender --background --python tools/blender/make_creep.py -- --out public/models/melee_creep.glb`
-- `public/models/swordmaster.glb` and `frost_archer.glb` are not generated. Both
+- `public/models/heroes/swordmaster.glb` and `frost_archer.glb` are not generated. Both
   were modelled by hand in `tools/blender/heroes.blend` and exported from there,
   so `npm run model` does not touch them.
 

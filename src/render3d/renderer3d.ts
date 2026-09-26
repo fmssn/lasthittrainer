@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { Unit, Vec2 } from '../sim/types.ts';
 import type { World } from '../sim/world.ts';
 import { Scene3D } from './scene.ts';
-import { UnitView, type RigAsset } from './unitView.ts';
+import { UnitView, type UnitAssets } from './unitView.ts';
 import { HEROES } from '../sim/heroes.ts';
 import {
   KIND_SCALE,
@@ -16,15 +16,14 @@ import { Annotations } from './annotations.ts';
 import { ProjectileLayer } from './projectileView.ts';
 import { Effects } from './effects.ts';
 import { SiegeView } from './siegeView.ts';
-import { isPlayerTarget } from './targetAids.ts';
 
 /**
  * The renderer: a three.js stage plus a screen-space overlay.
  *
- * The drawing splits in two. Anything that lives on the ground plane (range
- * rings, tower zones, the killable pulse) is real geometry, and anything that
- * has to stay screen-sized and legible mid-swing (health bars, floaters, the
- * windup arc) is drawn on a 2D canvas over the stage in {@link Annotations}.
+ * The drawing splits in two. Anything that lives on the ground plane (the
+ * selection ring, tower zones) is real geometry, and anything that has to stay
+ * screen-sized and legible mid-swing (health bars, floaters) is drawn on a 2D
+ * canvas over the stage in {@link Annotations}.
  *
  * Screen points are CSS pixels relative to the canvas; world points are sim
  * units. `#game` stays transparent on top as the pointer surface, with the
@@ -137,9 +136,7 @@ export class Renderer3D {
   constructor(
     container: HTMLElement,
     before: HTMLElement,
-    private readonly asset: RigAsset,
-    /** Hero models by hero id. A hero without one wears the creep rig and kit. */
-    private readonly heroAssets: Readonly<Record<string, RigAsset>> = {},
+    private readonly assets: UnitAssets,
   ) {
     this.canvas = document.createElement('canvas');
     this.canvas.className = 'stage3d';
@@ -221,9 +218,9 @@ export class Renderer3D {
     return best ?? world.unitAt(this.toWorld(screen), forUnit);
   }
 
-  zoom(delta: number) {
-    // The 2D camera's positive delta means "closer"; the ortho frustum shrinks.
-    this.stage.zoom(-delta);
+  /** Zoom by mouse-wheel notches, positive out. */
+  zoom(notches: number) {
+    this.stage.zoom(notches);
   }
 
   draw(world: World, dt: number) {
@@ -241,11 +238,7 @@ export class Renderer3D {
 
     this.ringsUsed = 0;
     this.drawTowerZones(world);
-    if (world.config.showRangeRings && world.player.alive) {
-      this.ring(world.player.pos, world.player.attackRange, 0xffd479, 0.14);
-    }
     this.drawSelection(world);
-    this.drawKillable(world);
     for (let i = this.ringsUsed; i < this.rings.length; i++) this.rings[i].visible = false;
 
     this.cursorRing.position.set(this.cursor.x, 2, this.cursor.y);
@@ -296,11 +289,20 @@ export class Renderer3D {
 
   /**
    * The catapult is authored directly in sim units and has no skeleton, so it
-   * takes neither the shared rig nor its per-kind scale.
+   * takes neither the shared rig nor its per-kind scale. Melee and ranged
+   * creeps are KayKit skeletons in their team's colours; heroes have models of
+   * their own.
    */
   private makeView(unit: Unit): UnitLike {
     if (unit.kind === 'siege_creep') return new SiegeView(unit);
-    const view = new UnitView(unit, this.assetFor(unit), tintFor(unit));
+    const kind = unit.kind;
+    const asset =
+      kind === 'melee_creep' || kind === 'ranged_creep'
+        ? this.assets.creeps[kind][unit.team]
+        : kind === 'hero'
+          ? this.heroAsset(unit)
+          : this.assets.box;
+    const view = new UnitView(unit, asset, tintFor(unit));
     view.root.scale.multiplyScalar(KIND_SCALE[unit.kind] ?? 1);
     return view;
   }
@@ -309,10 +311,9 @@ export class Renderer3D {
    * A unit carries its hero's display name but not its id, and the sim has no
    * reason to grow a render-only field, so the id is looked up by name.
    */
-  private assetFor(unit: Unit): RigAsset {
-    if (unit.kind !== 'hero') return this.asset;
+  private heroAsset(unit: Unit) {
     const id = HEROES.find((h) => h.name === unit.name)?.id;
-    return (id && this.heroAssets[id]) || this.asset;
+    return (id && this.assets.heroes[id]) || this.assets.box;
   }
 
   /** Units the sim has forgotten: hold the corpse long enough to read the fall. */
@@ -388,22 +389,6 @@ export class Renderer3D {
       // just a line through the middle of the lane.
       if (d > u.attackRange + 600) continue;
       this.ring(u.pos, u.attackRange, u.team === 'radiant' ? 0x5fbf7a : 0xd8615a, 0.2);
-    }
-  }
-
-  /**
-   * A pulse at the feet of anything you could kill with a swing started now.
-   * The gold frame {@link Annotations} puts on the health bar is the primary
-   * cue; this is the peripheral one, for creeps you are not looking straight at.
-   */
-  private drawKillable(world: World) {
-    if (!world.config.showKillableHighlight || !world.player.alive) return;
-    const pulse = 0.45 + 0.35 * Math.sin(world.time * 12);
-    for (const u of world.aliveUnits()) {
-      if (u.kind === 'hero' || u.kind === 'tower') continue;
-      if (!isPlayerTarget(world, u)) continue;
-      if (!world.shouldSwingNow(world.player, u)) continue;
-      this.ring(u.pos, pickRadius(u) + 10, u.team === 'radiant' ? 0x7fd6a2 : 0xffd479, pulse);
     }
   }
 

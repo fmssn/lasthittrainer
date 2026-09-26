@@ -1,7 +1,8 @@
 import { World } from './sim/world.ts';
 import { DEFAULT_CONFIG } from './sim/config.ts';
 import { Renderer3D } from './render3d/renderer3d.ts';
-import { loadRig } from './render3d/unitView.ts';
+import { loadUnitAssets } from './render3d/unitView.ts';
+import { wheelNotches } from './input.ts';
 
 /**
  * 3D debug page.
@@ -22,16 +23,10 @@ const info = document.getElementById('info') as HTMLDivElement;
 
 const world = new World({ ...DEFAULT_CONFIG, duration: 99999 });
 
-Promise.all([
-  loadRig('/models/melee_creep.glb'),
-  loadRig('/models/swordmaster.glb'),
-  loadRig('/models/frost_archer.glb'),
-])
-  .then(([asset, swordmaster, frost_archer]) =>
-    start(new Renderer3D(app, info, asset, { swordmaster, frost_archer })),
-  )
+loadUnitAssets((path) => `/${path}`)
+  .then((assets) => start(new Renderer3D(app, info, assets)))
   .catch((err) => {
-    info.textContent = `Failed to load a model: ${err.message}`;
+    info.textContent = `Failed to load creep: ${err.message}`;
     console.error(err);
   });
 
@@ -43,7 +38,7 @@ function start(renderer: Renderer3D) {
       renderer.toggleOrbit(orbit);
     }
   });
-  addEventListener('wheel', (e) => renderer.zoom(e.deltaY > 0 ? -0.1 : 0.1), { passive: true });
+  addEventListener('wheel', (e) => renderer.zoom(wheelNotches(e)), { passive: true });
 
   let last = performance.now();
   let accumulator = 0;

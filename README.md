@@ -16,7 +16,7 @@ npm run dev
 ## What it trains, in four layers
 
 1. **Last hits** — always on. Land the killing blow on enemy creeps.
-2. **Denies** — A-click your own creeps at or under 50% HP. The deny line is drawn on every health bar.
+2. **Denies** — A-click your own creeps at or under 50% HP.
 3. **Contested lane** — an enemy hero goes for the same creeps, with a reaction delay and an HP-estimate error band set by difficulty. It does not read the simulation state perfectly.
 4. **Creep aggro** — right-clicking the enemy hero pulls every enemy creep within 500 range onto you for 2.3 seconds, and pulls the tower if you are inside its range. Harass is not free.
 
@@ -40,13 +40,9 @@ The window where a creep is exactly one hero hit from death is roughly half a
 second. The Frost Archer's attack takes 0.4s of wind-up plus arrow travel — so
 by the time a creep *looks* killable, it is already too late to click.
 
-That is why the "swing now" highlight in this trainer is predictive. It projects
-the creep's HP forward to the instant your attack would actually land, counting
-every projectile already in the air and every scheduled swing from everything
-else hitting it, and lights up when starting a swing *right now* would finish it.
-That is the timing your hands need to learn.
-
-Turn the training aids off once it clicks. That is the graduation.
+There are no training aids to lean on: no killable highlight, no damage
+preview, no deny line, no wind-up arc. The health bars look like they do in
+game, so the timing you build here is the timing you take back there.
 
 ## Fidelity notes
 
@@ -104,3 +100,9 @@ sim modules through vite, then asserts numbers — the reference values, swing
 timing to the frame, creep targeting and aggro, contact behaviour, and a
 fixed-seed replay. That is how it exists at all in a project whose only runtime
 dependency is three.
+
+## Credits
+
+The melee and ranged creeps are from Kay Lousberg's
+[KayKit Character Pack: Skeletons](https://kaylousberg.itch.io/kaykit-skeletons)
+(CC0), recoloured per team by `tools/blender/build_units.py`.

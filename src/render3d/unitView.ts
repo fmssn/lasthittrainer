@@ -1,39 +1,51 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
-import type { Unit } from '../sim/types.ts';
+import type { Team, Unit } from '../sim/types.ts';
 import { attackPointTime } from '../sim/constants.ts';
+import { HEROES } from '../sim/heroes.ts';
 import { attachKit } from './weapons.ts';
 
 /**
  * One animated unit on the 3D stage.
  *
  * The clip choice is derived from sim state only — nothing here writes back
- * into the sim, and nothing in sim/ knows this file exists. Swapping the creep
- * GLB for a real asset means matching four clip names, nothing more.
+ * into the sim, and nothing in sim/ knows this file exists.
+ *
+ * Three kinds of file come through here.
+ * - The hero models (models/heroes/, built by hand in tools/blender/heroes.blend)
+ *   wear their own gear, carry their hit time on the armature, and take the
+ *   team colour on their `Team` material only.
+ * - The KayKit skeletons (tools/blender/build_units.py) draw the melee and
+ *   ranged creeps. They carry their own colours and weapons, and their hit time
+ *   and stride in the file.
+ * - The box rig (melee_creep.glb) is what is left for anything else. It is
+ *   tinted per team and fitted with procedural kit, and its timing numbers are
+ *   the constants below.
  */
 
-/** Blender scene fps the creep clips were authored at. */
+/** Blender scene fps the clips were authored at. */
 const CLIP_FPS = 24;
 /**
- * Frame in the creep's Attack clip where the club actually connects. The clip
- * starts on frame 1, so the hit sits (10 - 1) / 24 seconds in. The runtime
- * rescales the clip so this instant lands exactly on the sim's damage tick.
- * A hero model carries its own number instead; see {@link RigAsset.hitTime}.
+ * Frame in the Attack clip where the club actually connects. The clip starts on
+ * frame 1, so the hit sits (10 - 1) / 24 seconds in. The runtime rescales the
+ * clip so this instant lands exactly on the sim's damage tick.
  */
-const CREEP_HIT_TIME = (10 - 1) / CLIP_FPS;
-
-/**
- * The one material a hero model lets the runtime recolour. Everything else on
- * a hero is authored colour, and tinting skin and steel with the team colour
- * is what made the creep read as a painted mannequin.
- */
-const TEAM_MATERIAL = 'Team';
+const ATTACK_HIT_TIME = (10 - 1) / CLIP_FPS;
 
 /** Model is authored 1.85 units tall; sim creeps read right at ~100 units. */
 const MODEL_SCALE = 54;
 /** Head height of an unscaled rig, in sim units. Health bars anchor to it. */
 export const MODEL_HEIGHT = 1.85 * MODEL_SCALE;
+
+/**
+ * Height of a KayKit rig's head joint in sim units, which sets its scale. All
+ * the skeletons share one rig with the head joint at the same height, so
+ * scaling by it keeps a hat or helmet from changing how big the body is drawn.
+ * 48 puts the melee creep's top at about 100, where the box creep stood.
+ */
+const KAYKIT_STATURE = 48;
+const STATURE_JOINT = 'head';
 
 /** Below this sim-speed a unit is considered standing still. */
 const WALK_EPSILON = 12;
@@ -51,17 +63,38 @@ const SPEED_WINDOW = 0.1;
 
 export type ClipName = 'Idle' | 'Walk' | 'Attack' | 'Death';
 
-export interface RigAsset {
+export interface CreepAsset {
   scene: THREE.Group;
   clips: THREE.AnimationClip[];
-  /** Seconds into the unscaled Attack clip where the blow connects. */
+  /** Sim units per file unit, before the renderer's per-kind scale. */
+  scale: number;
+  /** Seconds into Attack where the blow lands. */
   hitTime: number;
   /**
-   * True for a model built for one hero: it wears its own weapon and gear, so
-   * no procedural kit goes on, and only its Team material takes the tint.
+   * File units per second the Walk clip covers at time scale 1. Null for the
+   * box rig, which keeps the cadence it was tuned at by eye.
    */
-  bespoke: boolean;
+  groundSpeed: number | null;
+  /** The box rig: tinted per team and fitted with procedural kit. */
+  box: boolean;
+  /**
+   * A hero model: only its `Team` material takes the tint. Everything else on
+   * it is authored colour, and tinting skin and steel with the team colour is
+   * what made the box rig read as a painted mannequin.
+   */
+  teamTint: boolean;
 }
+
+/** The files the renderer draws with. Siege creeps and towers need none. */
+export interface UnitAssets {
+  box: CreepAsset;
+  creeps: Record<'melee_creep' | 'ranged_creep', Record<Team, CreepAsset>>;
+  /** By hero id. Every hero in HEROES has one. */
+  heroes: Record<string, CreepAsset>;
+}
+
+/** The one material a hero model lets the runtime recolour. */
+const TEAM_MATERIAL = 'Team';
 
 /** Base64 payload of a `data:` URL, as bytes. */
 function decodeDataUrl(url: string): ArrayBuffer {
@@ -69,13 +102,7 @@ function decodeDataUrl(url: string): ArrayBuffer {
   return bytes.buffer;
 }
 
-/**
- * Load a rig. A hero model says so by carrying `hitTime` as custom properties
- * on its armature (glTF extras, which the loader puts on `userData`), so the
- * contact frame travels with the file rather than living in a constant here
- * that the next re-export silently invalidates.
- */
-export async function loadRig(url: string): Promise<RigAsset> {
+async function loadGltf(url: string) {
   const loader = new GLTFLoader();
   // A data: URL is decoded here and handed to parse() rather than loadAsync(),
   // which would fetch() it — and fetch() on a data: URL is a connect-src request,
@@ -88,17 +115,137 @@ export async function loadRig(url: string): Promise<RigAsset> {
   if (missing.length) {
     // Loud on purpose: a silently-dropped clip is the classic glTF export bug,
     // and it is much cheaper to catch here than to debug as "the creep T-poses".
-    throw new Error(`${url} is missing clips: ${missing.join(', ')}`);
+    throw new Error(`${name(url)} is missing clips: ${missing.join(', ')}`);
   }
-  let hitTime: number | undefined;
-  gltf.scene.traverse((o) => {
-    if (typeof o.userData.hitTime === 'number') hitTime = o.userData.hitTime;
-  });
+  return gltf;
+}
+
+function name(url: string): string {
+  return url.startsWith('data:') ? 'an inlined model' : url;
+}
+
+/** A clip's number from its glTF extras, if it is a usable one. */
+function extra(clip: THREE.AnimationClip, key: string): number | null {
+  const v = clip.userData[key];
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+
+/** The box rig, the fallback for anything without a model of its own. */
+export async function loadCreep(url: string): Promise<CreepAsset> {
+  const gltf = await loadGltf(url);
   return {
     scene: gltf.scene,
     clips: gltf.animations,
-    hitTime: hitTime ?? CREEP_HIT_TIME,
-    bespoke: hitTime !== undefined,
+    scale: MODEL_SCALE,
+    hitTime: ATTACK_HIT_TIME,
+    groundSpeed: null,
+    box: true,
+    teamTint: false,
+  };
+}
+
+/**
+ * A hero model from tools/blender/heroes.blend. It is authored in metres like
+ * the box rig, so it takes the same scale. Its contact (or release) time is a
+ * custom property on the armature, which the exporter writes as node extras,
+ * so it travels with the file rather than living in a constant that the next
+ * re-export silently invalidates. A file without one is refused, for the same
+ * reason the KayKit loader refuses one.
+ */
+export async function loadHero(url: string): Promise<CreepAsset> {
+  const gltf = await loadGltf(url);
+  const attack = gltf.animations.find((c) => c.name === 'Attack')!;
+  const found: number[] = [];
+  gltf.scene.traverse((o) => {
+    const v = o.userData.hitTime;
+    if (typeof v === 'number' && Number.isFinite(v)) found.push(v);
+  });
+  const hitTime = found[0];
+  if (hitTime === undefined || hitTime <= 0 || hitTime >= attack.duration) {
+    throw new Error(`${name(url)}: the armature needs a hitTime inside (0, ${attack.duration.toFixed(3)}) s`);
+  }
+  return {
+    scene: gltf.scene,
+    clips: gltf.animations,
+    scale: MODEL_SCALE,
+    hitTime,
+    // The walk was not authored against a measured stride, so it keeps the
+    // box rig's cadence rule.
+    groundSpeed: null,
+    box: false,
+    teamTint: true,
+  };
+}
+
+/**
+ * A KayKit creep from tools/blender/build_units.py. Its contact time and stride
+ * come from the clips' glTF extras; without them the swing would land visibly
+ * early or late and the walk would skate, so a file missing either is refused.
+ */
+export async function loadKayKitCreep(url: string): Promise<CreepAsset> {
+  const gltf = await loadGltf(url);
+  const clip = (n: ClipName) => gltf.animations.find((c) => c.name === n)!;
+
+  const attack = clip('Attack');
+  const hitTime = extra(attack, 'hitTime');
+  if (hitTime === null || hitTime <= 0 || hitTime >= attack.duration) {
+    throw new Error(
+      `${name(url)}: Attack needs a hitTime inside (0, ${attack.duration.toFixed(3)}) s ` +
+        `in its glTF extras, got ${JSON.stringify(attack.userData.hitTime)}`,
+    );
+  }
+  const groundSpeed = extra(clip('Walk'), 'groundSpeed');
+  if (groundSpeed === null || groundSpeed <= 0) {
+    throw new Error(
+      `${name(url)}: Walk needs a positive groundSpeed in its glTF extras, ` +
+        `got ${JSON.stringify(clip('Walk').userData.groundSpeed)}`,
+    );
+  }
+
+  gltf.scene.updateMatrixWorld(true);
+  const joint = gltf.scene.getObjectByName(STATURE_JOINT);
+  const stature = joint ? joint.getWorldPosition(new THREE.Vector3()).y : 0;
+  if (!(stature > 0)) throw new Error(`${name(url)} has no "${STATURE_JOINT}" joint to scale by`);
+
+  return {
+    scene: gltf.scene,
+    clips: gltf.animations,
+    scale: KAYKIT_STATURE / stature,
+    hitTime,
+    groundSpeed,
+    box: false,
+    teamTint: false,
+  };
+}
+
+/**
+ * Everything the renderer draws with, loaded in parallel. `url` maps a path
+ * under public/ to where it is served from, so a packed build can hand in
+ * data: URLs instead.
+ */
+export async function loadUnitAssets(url: (path: string) => string): Promise<UnitAssets> {
+  const creep = (kind: string, team: Team) => loadKayKitCreep(url(`models/units/${kind}_${team}.glb`));
+  // One model per hero in the roster. A missing one is as fatal as a creep:
+  // falling back to the box rig would put the wrong swing timing in front of
+  // the player.
+  const heroIds = HEROES.map((h) => h.id);
+  const [[box, meleeR, meleeD, rangedR, rangedD], heroModels] = await Promise.all([
+    Promise.all([
+      loadCreep(url('models/melee_creep.glb')),
+      creep('melee_creep', 'radiant'),
+      creep('melee_creep', 'dire'),
+      creep('ranged_creep', 'radiant'),
+      creep('ranged_creep', 'dire'),
+    ]),
+    Promise.all(heroIds.map((id) => loadHero(url(`models/heroes/${id}.glb`)))),
+  ]);
+  return {
+    box,
+    creeps: {
+      melee_creep: { radiant: meleeR, dire: meleeD },
+      ranged_creep: { radiant: rangedR, dire: rangedD },
+    },
+    heroes: Object.fromEntries(heroIds.map((id, i) => [id, heroModels[i]])),
   };
 }
 
@@ -107,6 +254,8 @@ export class UnitView {
   private mixer: THREE.AnimationMixer;
   private actions = new Map<ClipName, THREE.AnimationAction>();
   private current: ClipName = 'Idle';
+  private readonly hitTime: number;
+  private readonly groundSpeed: number | null;
 
   /** Phase seen last frame, so a new swing is detected as a transition. */
   private prevPhase: Unit['phase'] = 'idle';
@@ -117,21 +266,22 @@ export class UnitView {
   private travelled = 0;
   private window = 0;
   private dead = false;
-  private readonly hitTime: number;
 
-  constructor(unit: Unit, asset: RigAsset, tint?: number) {
+  constructor(unit: Unit, asset: CreepAsset, tint?: number) {
     this.root = cloneSkinned(asset.scene) as THREE.Group;
-    this.root.scale.setScalar(MODEL_SCALE);
+    this.root.scale.setScalar(asset.scale);
     this.hitTime = asset.hitTime;
+    this.groundSpeed = asset.groundSpeed;
 
     this.root.traverse((o) => {
       if (!(o instanceof THREE.Mesh)) return;
       const mat = o.material as THREE.MeshStandardMaterial;
-      // The sword trail is a translucent sheet; a shadow of it would be a
-      // solid grey blade on the lane.
+      // A hero's sword trail and release flash are translucent sheets; a
+      // shadow of one would be a solid grey shape on the lane.
       o.castShadow = !mat.transparent;
       o.receiveShadow = true;
-      if (tint !== undefined && (!asset.bespoke || mat.name === TEAM_MATERIAL)) {
+      const tinted = asset.box || (asset.teamTint && mat.name === TEAM_MATERIAL);
+      if (tinted && tint !== undefined) {
         // Clone so the two teams do not share one material instance.
         o.material = mat.clone();
         (o.material as THREE.MeshStandardMaterial).color.setHex(tint);
@@ -140,9 +290,8 @@ export class UnitView {
 
     // Kit follows from sim state like everything else here: a unit that spawns
     // projectiles shoots, one that hits instantly swings. Attached after the
-    // tint pass so steel, wood and cloth keep their own colours. A hero model
-    // is already dressed.
-    if (!asset.bespoke && !attachKit(this.root, unit.kind, unit.projectileSpeed)) {
+    // tint pass so steel, wood and cloth keep their own colours.
+    if (asset.box && !attachKit(this.root, unit.kind, unit.projectileSpeed)) {
       throw new Error('creep rig is missing the bones the unit kit mounts on');
     }
 
@@ -227,10 +376,14 @@ export class UnitView {
       // Cancelled or finished: 0.12s out is quick enough to read as an
       // interrupted swing without snapping.
       if (this.speed > WALK_EPSILON) {
-        // Deliberately not foot-locked: sim creeps move 325 units/s, which is
-        // several body-heights per second. Matching stride exactly would look
-        // like a sprint. Cadence is scaled, then clamped, and slide is accepted.
-        const cadence = THREE.MathUtils.clamp(this.speed / 240, 0.7, 2.0);
+        // The box rig is deliberately not foot-locked: 325 units/s is several
+        // of its body-heights per second, and matching stride exactly would look
+        // like a sprint, so it scales, clamps and accepts the slide. A KayKit
+        // rig knows its own stride and runs (Running_A), so at 325 its feet stay
+        // about planted: 1.86x for the melee creep, and the ranged one, drawn
+        // at 0.88, just over the clamp. The scale includes that per-kind nudge.
+        const stride = this.groundSpeed === null ? 240 : this.groundSpeed * this.root.scale.x;
+        const cadence = THREE.MathUtils.clamp(this.speed / stride, 0.7, 2.0);
         this.play('Walk', 0.12, cadence);
         this.actions.get('Walk')!.timeScale = cadence;
       } else {
