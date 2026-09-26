@@ -7,8 +7,10 @@ import { Input } from './input.ts';
 import { Hud } from './ui/hud.ts';
 import { Menu } from './ui/menu.ts';
 import { Results } from './ui/results.ts';
-import { Mixer } from './audio/mixer.ts';
+import { Mixer, type Voice } from './audio/mixer.ts';
 import { LaneAudio } from './audio/laneAudio.ts';
+import { loadSoundSettings, saveSoundSettings } from './audio/settings.ts';
+import type { SoundControls } from './ui/menu.ts';
 
 /**
  * Where a file under public/ comes from.
@@ -27,6 +29,20 @@ const modelUrl = (path: string) => INLINED?.[path] ?? `${import.meta.env.BASE_UR
 // that fails only leaves its sound silent.
 const mixer = new Mixer(modelUrl);
 void mixer.load();
+let soundSettings = loadSoundSettings();
+const sound: SoundControls = {
+  get: () => soundSettings,
+  set(patch, save) {
+    soundSettings = { ...soundSettings, ...patch };
+    const { master, effects, ambience, muted } = soundSettings;
+    mixer.setVolume({ master, effects, ambience });
+    mixer.setMuted(muted);
+    if (save) saveSoundSettings(soundSettings);
+  },
+};
+sound.set({}, false);
+/** The loop under a running drill, so the end of the run can fade it. */
+let ambience: Voice | null = null;
 
 const SIM_STEP = 1 / 120;
 const MAX_CATCHUP = 0.25;
@@ -65,7 +81,7 @@ overlay.addEventListener(
   true,
 );
 
-const menu = new Menu(overlay, (config) => start(config));
+const menu = new Menu(overlay, (config) => start(config), sound);
 const results = new Results(
   overlay,
   () => {
@@ -116,6 +132,7 @@ async function boot() {
     if (state === 'playing') setPaused(true);
     else if (state === 'paused') setPaused(false);
   };
+  input.onMute = () => sound.set({ muted: !soundSettings.muted }, true);
 
   menu.show();
   requestAnimationFrame(frame);
@@ -139,9 +156,12 @@ pauseScreen.querySelector('[data-end]')?.addEventListener('click', () => finish(
 pauseScreen.querySelector('[data-quit]')?.addEventListener('click', () => toMenu());
 
 // A backgrounded tab throttles requestAnimationFrame, which would otherwise
-// turn the drill into slow motion instead of stopping it.
+// turn the drill into slow motion instead of stopping it. The sound stops with
+// it, and comes back with the tab unless the drill is still paused.
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && state === 'playing') setPaused(true);
+  if (document.hidden) mixer.suspend();
+  else if (state !== 'paused') mixer.resume();
 });
 
 function start(config: DrillConfig) {
@@ -150,8 +170,15 @@ function start(config: DrillConfig) {
   renderer.snap(world.player.pos);
   renderer.cursor = { ...world.player.pos };
   input.attach(world);
+  // Only what a previous run left behind: a blanket stop would also cut the
+  // click of the button that started this one.
+  mixer.stop('lane_ambience');
+  mixer.stop('run_end');
   mixer.resume();
   laneAudio.reset(world);
+  // Dota's 0:00 horn, and the forest the drill runs in.
+  mixer.play('horn');
+  ambience = mixer.play('lane_ambience');
   menu.hide();
   results.hide();
   pauseScreen.hidden = true;
@@ -166,6 +193,10 @@ function setPaused(paused: boolean) {
   state = paused ? 'paused' : 'playing';
   pauseScreen.hidden = !paused;
   lastFrame = performance.now();
+  // Suspending the context freezes what is already playing too, so a swing
+  // that was mid-air does not ring out over the pause screen.
+  if (paused) mixer.suspend();
+  else mixer.resume();
 }
 
 function finish() {
@@ -173,6 +204,9 @@ function finish() {
   pauseScreen.hidden = true;
   hud.hide();
   input.attach(null);
+  ambience?.stop(1);
+  ambience = null;
+  mixer.play('run_end');
   results.show(lastConfig, world.stats);
   state = 'results';
 }
@@ -180,6 +214,7 @@ function finish() {
 function toMenu() {
   world = null;
   mixer.stop();
+  ambience = null;
   input.attach(null);
   hud.hide();
   results.hide();

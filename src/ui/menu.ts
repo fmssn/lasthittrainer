@@ -15,9 +15,21 @@ import {
 import { loadRuns, type RunRecord } from '../stats.ts';
 import { inventoryHtml } from './inventory.ts';
 import { itemIconUrl } from './itemIcons.ts';
+import type { SoundSettings } from '../audio/settings.ts';
 
 const DURATIONS = [60, 120, 180, 300];
 const DIFFICULTY_NAMES = ['', 'Sloppy', 'Casual', 'Decent', 'Strong', 'Scripted'];
+const VOLUMES: [Exclude<keyof SoundSettings, 'muted'>, string][] = [
+  ['master', 'Master'],
+  ['effects', 'Lane'],
+  ['ambience', 'Ambience'],
+];
+
+/** What the menu needs of the sound: read the settings, and change them. */
+export interface SoundControls {
+  get(): SoundSettings;
+  set(patch: Partial<SoundSettings>, save: boolean): void;
+}
 
 function pips(n: number): string {
   return Array.from({ length: 5 }, (_, i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('');
@@ -30,6 +42,7 @@ export class Menu {
   constructor(
     root: HTMLElement,
     private onStart: (config: DrillConfig) => void,
+    private sound: SoundControls,
   ) {
     this.config = { ...DEFAULT_CONFIG, ...loadConfig() };
     this.config.items = legalLoadout(this.config.items);
@@ -66,6 +79,7 @@ export class Menu {
       .reverse();
     const gold = loadoutCost(c.items);
     const equipped = heroById(c.heroId, c.items);
+    const snd = this.sound.get();
 
     this.el.innerHTML = `
       <div class="menu-inner">
@@ -190,6 +204,20 @@ export class Menu {
           </div>
         </section>
 
+        <section class="block">
+          <h2>Sound</h2>
+          <div class="volumes">
+            ${VOLUMES.map(
+              ([key, label]) => `<label class="volume">
+                <span>${label}</span>
+                <input type="range" min="0" max="100" step="1" id="volume-${key}" data-volume="${key}" value="${Math.round(snd[key] * 100)}" />
+              </label>`,
+            ).join('')}
+            <label class="volume mute"><input type="checkbox" data-mute ${snd.muted ? 'checked' : ''} /> <span>Mute</span></label>
+          </div>
+          <p class="aside">M mutes during a drill. Lane covers every attack, death and reward; ambience is the forest under it.</p>
+        </section>
+
         ${runs.length ? `<section class="block"><h2>Recent runs</h2><div class="runs">${runs.map(runRow).join('')}</div></section>` : ''}
 
         <button class="start" data-start>Start drill</button>
@@ -230,6 +258,16 @@ export class Menu {
     );
     this.el.querySelectorAll<HTMLInputElement>('[data-toggle]').forEach((n) =>
       n.addEventListener('change', () => this.set(n.dataset.toggle as 'deniesEnabled', n.checked)),
+    );
+    // A slider acts while it moves and is saved when it is let go, so a drag is
+    // one write and not a hundred. No re-render: it would drop the drag.
+    this.el.querySelectorAll<HTMLInputElement>('[data-volume]').forEach((n) => {
+      const key = n.dataset.volume as (typeof VOLUMES)[number][0];
+      n.addEventListener('input', () => this.sound.set({ [key]: Number(n.value) / 100 }, false));
+      n.addEventListener('change', () => this.sound.set({ [key]: Number(n.value) / 100 }, true));
+    });
+    this.el.querySelector<HTMLInputElement>('[data-mute]')?.addEventListener('change', (e) =>
+      this.sound.set({ muted: (e.target as HTMLInputElement).checked }, true),
     );
     this.el.querySelector('[data-start]')?.addEventListener('click', () => {
       this.onStart({ ...this.config, seed: (Math.random() * 0xffff) | 0 });

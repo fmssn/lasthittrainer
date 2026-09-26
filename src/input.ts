@@ -11,12 +11,14 @@ import type { World } from './sim/world.ts';
  *   S                  stop (cancels the backswing, frees the next order)
  *   scroll             zoom
  *   space              pause
+ *   M                  mute
  */
 export class Input {
   private world: World | null = null;
   /** Cursor in canvas pixels, so a keystroke can aim at what the mouse is over. */
   private lastScreen: Vec2 = { x: 0, y: 0 };
   onPause: (() => void) | null = null;
+  onMute: (() => void) | null = null;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -88,6 +90,10 @@ export class Input {
     if (key === 'escape' || key === ' ') {
       e.preventDefault();
       this.onPause?.();
+      return;
+    }
+    if (key === 'm') {
+      this.onMute?.();
       return;
     }
     if (!world || !world.player.alive) return;

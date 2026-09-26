@@ -543,6 +543,7 @@ await page.evaluate(() => {
     enemyDifficulty: 3,
     aggroEnabled: true,
     seed: 4242,
+    items: [],
   });
 });
 await page.waitForTimeout(2500);
@@ -554,6 +555,12 @@ results.push({
   ok: (drillPlays.melee_creep_hit ?? 0) > 0,
   actual: JSON.stringify(drillPlays),
   expected: 'melee_creep_hit > 0',
+});
+results.push({
+  name: 'a run opens with the horn and the ambience',
+  ok: drillPlays.horn === 1 && drillPlays.lane_ambience === 1,
+  actual: `horn ${drillPlays.horn}, ambience ${drillPlays.lane_ambience}`,
+  expected: 'horn 1, ambience 1',
 });
 
 const aim = await page.evaluate(() => {
@@ -600,6 +607,12 @@ if (!aim) {
     expected: '{"target":null,"moving":true}',
   });
 }
+
+const endPlays = await page.evaluate(() => {
+  window.__lht.finish();
+  return window.__lht.audioStats();
+});
+results.push({ name: 'the results screen plays run_end', ok: endPlays.run_end === 1, actual: endPlays.run_end, expected: 1 });
 
 await browser.close();
 
