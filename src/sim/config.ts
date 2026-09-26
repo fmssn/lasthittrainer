@@ -27,12 +27,12 @@ export interface DrillConfig {
 }
 
 export const DEFAULT_CONFIG: DrillConfig = {
-  heroId: 'shadow_fiend',
+  heroId: 'frost_archer',
   items: [],
   duration: 180,
   deniesEnabled: true,
   enemyHero: true,
-  enemyHeroId: 'crystal_maiden',
+  enemyHeroId: 'swordmaster',
   enemyDifficulty: 3,
   aggroEnabled: true,
   showKillableHighlight: true,

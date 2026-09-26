@@ -45,8 +45,8 @@ const rows = await page.evaluate(
         const w = new World({
           ...DEFAULT_CONFIG,
           // Same hero both sides: the row is about the profile, not the matchup.
-          heroId: 'shadow_fiend',
-          enemyHeroId: 'shadow_fiend',
+          heroId: 'frost_archer',
+          enemyHeroId: 'frost_archer',
           enemyDifficulty: d,
           duration: minutes * 60,
           seed,

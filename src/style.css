@@ -670,37 +670,61 @@ kbd {
 
 /* starting items */
 
-.inventory {
+.inventory-row {
   display: flex;
   align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.inventory {
+  display: flex;
   gap: 6px;
-  margin-bottom: 10px;
 }
 
 .slot {
-  flex: 0 1 48px;
-  height: 36px;
-  display: grid;
-  place-items: center;
+  position: relative;
+  width: 46px;
+  height: 46px;
+  padding: 0;
   border: 1px dashed var(--line);
-  border-radius: 6px;
-  font: 700 12px var(--font);
-  color: var(--accent);
+  border-radius: 5px;
+  background: #0d1216;
+  overflow: hidden;
 }
 
 .slot.filled {
-  border-style: solid;
-  background: var(--panel-solid);
+  border: 1px solid #000;
+}
+
+button.slot.filled {
   cursor: pointer;
 }
 
-.slot.filled:hover {
-  border-color: var(--dire);
+button.slot.filled:hover {
+  outline: 2px solid var(--dire);
+  outline-offset: 1px;
+}
+
+.item-icon {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Dota prints stack charges in the slot's bottom-right corner, over the art. */
+.charges {
+  position: absolute;
+  right: 3px;
+  bottom: 0;
+  font: 700 13px var(--display);
+  color: #fff;
+  text-shadow: 0 0 2px #000, 1px 1px 0 #000, -1px -1px 0 #000;
 }
 
 .gold {
   margin-left: auto;
-  padding-left: 6px;
   font-size: 12px;
   color: var(--muted);
   white-space: nowrap;
@@ -710,18 +734,90 @@ kbd {
   color: var(--gold);
 }
 
-.chip .cost {
-  color: var(--gold);
-  opacity: 0.8;
-  margin-left: 4px;
+.shop {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 6px;
 }
 
-.chip:disabled {
-  opacity: 0.35;
+.shop-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 12px 4px 4px;
+  background: var(--panel-solid);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--text);
+  font: 500 13px var(--font);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.12s;
+}
+
+.shop-item .item-icon {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border: 1px solid #000;
+  border-radius: 3px;
+}
+
+.shop-name {
+  flex: 1;
+}
+
+.shop-item .cost {
+  color: var(--gold);
+  font-weight: 600;
+}
+
+.shop-item:hover:not(:disabled) {
+  border-color: #3a4c59;
+}
+
+.shop-item:disabled {
+  opacity: 0.4;
   cursor: default;
 }
 
-.chip:disabled:hover {
-  border-color: var(--line);
-  color: var(--muted);
+.shop-item:disabled .item-icon {
+  filter: grayscale(0.85);
+}
+
+/* In game: Dota's three-by-two block, bottom right, out of the lane's way. */
+.hud-inventory {
+  position: absolute;
+  right: 20px;
+  bottom: 18px;
+  padding: 8px;
+}
+
+.hud-inventory .inventory {
+  display: grid;
+  grid-template-columns: repeat(3, 44px);
+  gap: 5px;
+}
+
+.hud-inventory .slot {
+  width: 44px;
+  height: 44px;
+}
+
+.results-items {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 10px;
+  vertical-align: middle;
+}
+
+.results-items .slot {
+  width: 26px;
+  height: 26px;
+  border-radius: 3px;
+}
+
+.results-items .charges {
+  font-size: 10px;
+  right: 1px;
 }

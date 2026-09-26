@@ -1,5 +1,7 @@
 import { World } from '../sim/world.ts';
 import { heroById } from '../sim/heroes.ts';
+import { legalLoadout } from '../sim/items.ts';
+import { inventoryHtml } from './inventory.ts';
 
 function fmtTime(s: number): string {
   const t = Math.max(0, Math.ceil(s));
@@ -8,6 +10,8 @@ function fmtTime(s: number): string {
 
 export class Hud {
   private el: HTMLDivElement;
+  /** The run whose items the inventory is showing; they cannot change mid-run. */
+  private stocked: World | null = null;
 
   constructor(root: HTMLElement) {
     this.el = document.createElement('div');
@@ -37,6 +41,7 @@ export class Hud {
           <span><kbd>Space</kbd> pause</span>
         </div>
       </div>
+      <div class="hud-panel hud-inventory" data-inventory></div>
       <div class="dead-overlay" data-dead hidden>
         <div class="dead-title">You died</div>
         <div class="dead-sub">Respawning in <span data-respawn>6</span>s — stop tanking the wave.</div>
@@ -59,6 +64,11 @@ export class Hud {
 
   update(world: World, attackReady: boolean) {
     const s = world.stats;
+    if (this.stocked !== world) {
+      this.stocked = world;
+      // What the player spawned with, which is what World itself equipped.
+      this.q('data-inventory').innerHTML = inventoryHtml(legalLoadout(world.config.items));
+    }
     this.q('data-lh').textContent = String(s.lastHits);
     this.q('data-dn').textContent = String(s.denies);
     this.q('data-gold').textContent = String(s.gold);

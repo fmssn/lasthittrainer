@@ -61,10 +61,14 @@ laning AI and holds your side at level 3, so the only thing changing down the
 table is the opponent. It is a measurement, not a pass/fail, and it catches the
 one class of bug nothing else here can: a side bias. A lane where Radiant
 quietly farms better than Dire would flatter you for three minutes and teach
-you nothing, and staring at the code does not find it. Current reading —
-level 3 against level 3 comes out 8.7 last hits each, gap 0.0, and the ladder
-runs 2.3 -> 4.0 -> 8.7 -> 12.3 -> 12.0. Re-run it after touching creep AI,
-the bot, or anything in the combat path.
+you nothing, and staring at the code does not find it. Current reading, with
+the Frost Archer on both sides — level 3 against level 3 comes out 4.3 to
+10.3 last hits, gap 6.0, and the ladder runs 1.7 -> 6.0 -> 10.3 -> 13.0 ->
+14.0. That gap is open, not accepted: three seeds exaggerate it, but over
+twelve it is still 5.3 to 7.5 (Swordmaster mirror 4.1 to 5.5) with Dire ahead
+in most seeds, so the lane leans Dire. Before the roster was cut the harness
+mirrored a hero no longer in it, which read 0.0 on the same seeds. Re-run it
+after touching creep AI, the bot, or anything in the combat path.
 
 To preview in-session, use `preview_start` with the launch config named
 `lasthittrainer` (`.claude/launch.json`); do not start the dev server via Bash.
@@ -85,8 +89,9 @@ src/sim/          Headless game simulation
   types.ts        Unit, Vec2, Projectile, KillEvent, DamageEvent — the data model
   units.ts        Creep/tower stat templates, spawnUnit, damage rolls
   heroes.ts       Hero base stats + attributes; level-1 stats are derived, not
-                  hand-copied. Ordered by attack-timing difficulty.
-  items.ts        Starting items from items.txt, 600 gold / 6 slot rules
+                  hand-copied. Two heroes, ordered by attack-timing difficulty.
+  items.ts        Starting items from items.txt, 600 gold / 6 slot / stacking
+                  rules
   math.ts         Vec helpers, angles, seeded RNG (makeRng)
   world.ts        World.step() — the fixed-timestep core. Spawns waves, resolves
                   windup/backswing, projectiles, damage, bounty, stats.
@@ -110,6 +115,8 @@ src/render3d/     The renderer: three.js stage + screen-space overlay
   annotations.ts  Screen-space layer: health bars, windup arc, floaters
   targetAids.ts   isPlayerTarget — the rule every training aid keys off
 src/ui/           menu.ts, hud.ts, results.ts — plain DOM over the canvas
+  inventory.ts    The six item slots, shared by the menu, HUD and results
+  itemIcons.ts    Item icons as SVG, in the style of the WC3 buttons
 src/input.ts      Dota-style mouse/keyboard mapping
 src/stats.ts      RunRecord persistence in localStorage (key `lht.runs.v1`)
 src/main.ts       Entry point: state machine (menu/playing/paused/results) + loop
@@ -134,12 +141,16 @@ tools/blender/    Headless Blender script that generates public/models/melee_cre
   0.1 regen per strength, 0.167 armor and 1 attack speed per agility, +1 damage
   per point of primary). Add a hero by writing its `HeroSource`, not by
   computing a stat block by hand. Copy `BaseAttackSpeed` too when the hero file
-  overrides the base 100 — Juggernaut's 110 went missing once and made his
-  swing 0.018s slow.
+  overrides the base 100 — the Swordmaster's 110 went missing once and made
+  its swing 0.018s slow.
 - Starting items feed `derive()` as attributes, so they get the same rules.
   Quell is the one item effect outside that: `Unit.creepDamageBonus`, added in
   `World.applyModifiers` before armor, enemy creeps only. Only the player gets
   items; the bot starts empty-handed.
+- Tango and Magic Stick carry no stats and cannot be used: they are there so a
+  real opening buy fits the 600 gold. Tango stacks (`ItemStackable 1`), so a
+  loadout is a list of *purchases* and `inventorySlots` folds it into slots.
+  Count slots through that, never `items.length`.
 - Attack speed divides the wind-up and the backswing as well as the interval.
   Anything that quotes a hero's timing to the player must quote the effective
   number, not the one authored in the hero file.
@@ -216,6 +227,13 @@ state should go in the renderer.
 - Comments explain *why* a number or branch exists (often citing Dota behaviour),
   not what the line does. Match that density — sparse but substantive.
 - No dependencies beyond `three`. Keep it that way unless asked.
+- Heroes go by names of our own (Swordmaster, Frost Archer), never Valve's,
+  anywhere a player can see: menu, HUD, results, README. Comments may still
+  name the script file a hero's numbers come from, since that is the source
+  citation. `canonicalHeroId` maps the ids they had before the rename, which
+  saved configs and run history still carry.
+- Item icons are drawn in `itemIcons.ts`. Do not swap in art ripped from
+  Warcraft III or Dota; avoiding that is why they are drawn by hand.
 
 ## Known gaps
 
@@ -223,7 +241,8 @@ state should go in the renderer.
   added as a rollup input.
 - There is no XP, no levels, no items beyond an optional starting buy, and no
   abilities: heroes are permanently level 1 and creeps permanently at their
-  0:00 stats. Faerie Fire's heal is not modelled, only its +2 damage. Deliberate — this is a
+  0:00 stats. Faerie Fire's heal is not modelled, only its +2 damage, and
+  Tango and Magic Stick do nothing at all. Deliberate — this is a
   last-hit drill, not a laning simulator.
 - No fog of war, no day/night, no runes, no neutral camps, no high ground and so
   no uphill miss chance.

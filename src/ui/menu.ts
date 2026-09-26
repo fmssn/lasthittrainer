@@ -1,8 +1,20 @@
-import { HEROES, heroById } from '../sim/heroes.ts';
+import { HEROES, canonicalHeroId, heroById } from '../sim/heroes.ts';
 import { DEFAULT_CONFIG, type DrillConfig } from '../sim/config.ts';
 import { attackInterval, attackPointTime } from '../sim/constants.ts';
-import { ITEMS, INVENTORY_SLOTS, STARTING_GOLD, canAdd, itemById, legalLoadout, loadoutCost, loadoutLabel, type ItemId } from '../sim/items.ts';
+import {
+  ITEMS,
+  STARTING_GOLD,
+  canAdd,
+  itemEffect,
+  legalLoadout,
+  loadoutCost,
+  loadoutLabel,
+  sellOne,
+  type ItemId,
+} from '../sim/items.ts';
 import { loadRuns, type RunRecord } from '../stats.ts';
+import { inventoryHtml } from './inventory.ts';
+import { itemIconUrl } from './itemIcons.ts';
 
 const DURATIONS = [60, 120, 180, 300];
 const DIFFICULTY_NAMES = ['', 'Sloppy', 'Casual', 'Decent', 'Strong', 'Scripted'];
@@ -21,6 +33,9 @@ export class Menu {
   ) {
     this.config = { ...DEFAULT_CONFIG, ...loadConfig() };
     this.config.items = legalLoadout(this.config.items);
+    // A saved config can name a hero that has since been renamed or retired.
+    this.config.heroId = canonicalHeroId(this.config.heroId) ?? DEFAULT_CONFIG.heroId;
+    this.config.enemyHeroId = canonicalHeroId(this.config.enemyHeroId) ?? DEFAULT_CONFIG.enemyHeroId;
     this.el = document.createElement('div');
     this.el.className = 'screen menu';
     root.appendChild(this.el);
@@ -44,7 +59,11 @@ export class Menu {
 
   private render() {
     const c = this.config;
-    const runs = loadRuns().slice(-6).reverse();
+    // Runs on a retired hero stay in storage but have nothing to show under.
+    const runs = loadRuns()
+      .filter((r) => canonicalHeroId(r.heroId))
+      .slice(-6)
+      .reverse();
     const gold = loadoutCost(c.items);
     const equipped = heroById(c.heroId, c.items);
 
@@ -85,21 +104,20 @@ export class Menu {
 
         <section class="block">
           <h2>Starting items</h2>
-          <div class="inventory">
-            ${Array.from({ length: INVENTORY_SLOTS }, (_, i) => {
-              const def = c.items[i] ? itemById(c.items[i]) : undefined;
-              return def
-                ? `<button class="slot filled" data-remove-item="${i}" title="${def.name} — click to sell">${def.short}</button>`
-                : `<span class="slot"></span>`;
-            }).join('')}
+          <div class="inventory-row">
+            ${inventoryHtml(c.items, { sellable: true })}
             <span class="gold ${gold > 0 ? 'spent' : ''}">${gold} / ${STARTING_GOLD} gold</span>
+            ${c.items.length ? `<button class="chip" data-clear-items>Clear</button>` : ''}
           </div>
-          <div class="chip-row small">
+          <div class="shop">
             ${ITEMS.map(
               (it) =>
-                `<button class="chip" data-add-item="${it.id}" ${canAdd(c.items, it.id) ? '' : 'disabled'}>${it.name} <span class="cost">${it.cost}</span></button>`,
+                `<button class="shop-item" data-add-item="${it.id}" title="${it.name}: ${itemEffect(it)}" ${canAdd(c.items, it.id) ? '' : 'disabled'}>
+                  <img class="item-icon" src="${itemIconUrl(it.id)}" alt="" />
+                  <span class="shop-name">${it.name}</span>
+                  <span class="cost">${it.cost}</span>
+                </button>`,
             ).join('')}
-            ${c.items.length ? `<button class="chip" data-clear-items>Clear</button>` : ''}
           </div>
           <p class="aside">
             ${
@@ -109,7 +127,7 @@ export class Menu {
                   }.`
                 : 'Nothing bought: bare level 1 stats.'
             }
-            Quelling Blade is +8 for melee and +4 for ranged, against enemy creeps only — it does not help a deny. Your hero only; the bot starts empty-handed.
+            Quelling Blade is +8 for melee and +4 for ranged, against enemy creeps only — it does not help a deny. Tango and Magic Stick cannot be used here; they are in the shop so a real opening buy fits the 600 gold. Your hero only; the bot starts empty-handed.
           </p>
         </section>
 
@@ -207,11 +225,8 @@ export class Menu {
         if (canAdd(this.config.items, id)) this.set('items', [...this.config.items, id]);
       }),
     );
-    this.el.querySelectorAll<HTMLElement>('[data-remove-item]').forEach((n) =>
-      n.addEventListener('click', () => {
-        const i = Number(n.dataset.removeItem);
-        this.set('items', this.config.items.filter((_, j) => j !== i));
-      }),
+    this.el.querySelectorAll<HTMLElement>('[data-sell-item]').forEach((n) =>
+      n.addEventListener('click', () => this.set('items', sellOne(this.config.items, n.dataset.sellItem as ItemId))),
     );
     this.el.querySelector('[data-clear-items]')?.addEventListener('click', () => this.set('items', []));
     this.el.querySelectorAll<HTMLElement>('[data-duration]').forEach((n) =>

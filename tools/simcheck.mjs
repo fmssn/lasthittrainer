@@ -85,61 +85,59 @@ const results = await page.evaluate(async () => {
   check('acq tower', constants.acquisitionRange('tower'), 700);
 
   // --- Level 1 heroes, derived from attributes ----------------------------
-  // Shadow Fiend: 16-22 base + 25 agi, 120 + 19*22 hp, 25 IAS, BAT 1.6.
-  const sf = heroes.heroById('shadow_fiend');
-  check('SF damage', `${sf.damageMin}-${sf.damageMax}`, '41-47');
-  check('SF hp', sf.maxHp, 538);
-  check('SF armor', sf.armor, 4.175, 0.001);
-  check('SF attack speed', sf.attackSpeedBonus, 25);
-  check('SF interval', constants.attackInterval(sf.baseAttackTime, sf.attackSpeedBonus), 1.28, 0.001);
-  check('SF windup', constants.attackPointTime(sf.attackPoint, sf.attackSpeedBonus), 0.4, 0.001);
+  // Swordmaster (npc_dota_hero_juggernaut): 22-24 + 32 agi. `BaseAttackSpeed
+  // 110` in the hero file, so 142 attack speed at level 1 and an authored 0.33
+  // point is 0.232 in lane.
+  const sword = heroes.heroById('swordmaster');
+  check('Swordmaster damage', `${sword.damageMin}-${sword.damageMax}`, '54-56');
+  check('Swordmaster hp', sword.maxHp, 560);
+  check('Swordmaster attack speed', sword.attackSpeedBonus, 42);
+  check('Swordmaster windup', constants.attackPointTime(sword.attackPoint, sword.attackSpeedBonus), 0.2324, 0.001);
+  check('Swordmaster interval', constants.attackInterval(sword.baseAttackTime, sword.attackSpeedBonus), 0.9859, 0.001);
 
-  // Juggernaut: 22-24 + 32 agi. `BaseAttackSpeed 110` in his hero file, so
-  // 142 attack speed at level 1 and an authored 0.33 point is 0.232 in lane.
-  const jug = heroes.heroById('juggernaut');
-  check('Jug damage', `${jug.damageMin}-${jug.damageMax}`, '54-56');
-  check('Jug hp', jug.maxHp, 560);
-  check('Jug attack speed', jug.attackSpeedBonus, 42);
-  check('Jug windup', constants.attackPointTime(jug.attackPoint, jug.attackSpeedBonus), 0.2324, 0.001);
-  check('Jug interval', constants.attackInterval(jug.baseAttackTime, jug.attackSpeedBonus), 0.9859, 0.001);
+  // Frost Archer (npc_dota_hero_drow_ranger): 27-34 + 24 agi, 120 + 16*22 hp,
+  // and no BaseAttackSpeed override, so agility is all of its attack speed.
+  const archer = heroes.heroById('frost_archer');
+  check('Archer damage', `${archer.damageMin}-${archer.damageMax}`, '51-58');
+  check('Archer hp', archer.maxHp, 472);
+  check('Archer armor', archer.armor, 4.008, 0.001);
+  check('Archer attack speed', archer.attackSpeedBonus, 24);
+  check('Archer windup', constants.attackPointTime(archer.attackPoint, archer.attackSpeedBonus), 0.4032, 0.001);
+  check('Archer interval', constants.attackInterval(archer.baseAttackTime, archer.attackSpeedBonus), 1.371, 0.001);
 
-  const sniper = heroes.heroById('sniper');
-  check('Sniper damage', `${sniper.damageMin}-${sniper.damageMax}`, '40-46');
-  check('Sniper windup', constants.attackPointTime(sniper.attackPoint, sniper.attackSpeedBonus), 0.1339, 0.001);
-
-  const cm = heroes.heroById('crystal_maiden');
-  check('CM damage', `${cm.damageMin}-${cm.damageMax}`, '48-54');
-  check('CM hp', cm.maxHp, 494);
-
-  const am = heroes.heroById('antimage');
-  check('AM damage', `${am.damageMin}-${am.damageMax}`, '54-58');
-  check('AM armor', am.armor, 6.175, 0.001);
-
-  const drow = heroes.heroById('drow');
-  check('Drow damage', `${drow.damageMin}-${drow.damageMax}`, '51-58');
-  // Nobody else overrides BaseAttackSpeed, so agility is all of it.
-  check('Drow attack speed', drow.attackSpeedBonus, 24);
+  // Saved configs and run history still carry the ids from before the rename.
+  check('old melee id resolves', heroes.canonicalHeroId('juggernaut'), 'swordmaster');
+  check('old ranged id resolves', heroes.canonicalHeroId('drow'), 'frost_archer');
+  check('retired hero is unknown', heroes.canonicalHeroId('shadow_fiend'), undefined);
+  check('retired hero still spawns something', heroes.heroById('shadow_fiend').id, 'swordmaster');
 
   // --- Starting items, from items.txt -------------------------------------
   const items = await import('/src/sim/items.ts');
   {
-    // Two branches are +2 agility on Jug: +2 damage, +2 attack speed, +0.334
-    // armor, +44 HP. Quell adds nothing to the listed damage — it is creep-only.
-    const j = heroes.heroById('juggernaut', ['quelling_blade', 'iron_branch', 'iron_branch']);
-    check('Jug+QB+2IB damage', `${j.damageMin}-${j.damageMax}`, '56-58');
-    check('Jug+QB+2IB attack speed', j.attackSpeedBonus, 44);
-    check('Jug+QB+2IB hp', j.maxHp, 604);
-    check('Jug+QB+2IB armor', j.armor, jug.armor + 0.334, 0.001);
-    check('Jug quell (melee)', j.creepDamageBonus, 8);
-    check('SF quell (ranged)', heroes.heroById('shadow_fiend', ['quelling_blade']).creepDamageBonus, 4);
-    // Slippers are damage on an agility hero, a Mantle is not; the reverse on CM.
-    check('SF+slippers damage', heroes.heroById('shadow_fiend', ['slippers']).damageMin, 44);
-    check('SF+mantle damage', heroes.heroById('shadow_fiend', ['mantle']).damageMin, 41);
-    check('CM+mantle damage', heroes.heroById('crystal_maiden', ['mantle']).damageMin, 51);
-    check('CM+circlet hp', heroes.heroById('crystal_maiden', ['circlet']).maxHp, 538);
-    check('faerie fire damage', heroes.heroById('sniper', ['faerie_fire']).damageMin, 42);
+    // Two branches are +2 agility on the Swordmaster: +2 damage, +2 attack
+    // speed, +0.334 armor, +44 HP. Quell adds nothing to the listed damage —
+    // it is creep-only.
+    const j = heroes.heroById('swordmaster', ['quelling_blade', 'iron_branch', 'iron_branch']);
+    check('Swordmaster+QB+2IB damage', `${j.damageMin}-${j.damageMax}`, '56-58');
+    check('Swordmaster+QB+2IB attack speed', j.attackSpeedBonus, 44);
+    check('Swordmaster+QB+2IB hp', j.maxHp, 604);
+    check('Swordmaster+QB+2IB armor', j.armor, sword.armor + 0.334, 0.001);
+    check('Swordmaster quell (melee)', j.creepDamageBonus, 8);
+    check('Archer quell (ranged)', heroes.heroById('frost_archer', ['quelling_blade']).creepDamageBonus, 4);
+    // Slippers are damage on an agility hero; a Mantle or Gauntlets are not.
+    check('Archer+slippers damage', heroes.heroById('frost_archer', ['slippers']).damageMin, 54);
+    check('Archer+mantle damage', heroes.heroById('frost_archer', ['mantle']).damageMin, 51);
+    check('Swordmaster+gauntlets damage', heroes.heroById('swordmaster', ['gauntlets']).damageMin, 54);
+    check('Swordmaster+gauntlets hp', heroes.heroById('swordmaster', ['gauntlets']).maxHp, 626);
+    check('Archer+circlet hp', heroes.heroById('frost_archer', ['circlet']).maxHp, 516);
+    check('faerie fire damage', heroes.heroById('frost_archer', ['faerie_fire']).damageMin, 53);
+    // Tango and Magic Stick are bought for the slot and the gold, nothing else.
+    const padded = heroes.heroById('frost_archer', ['tango', 'magic_stick']);
+    check('tango+stick add no damage', padded.damageMin, archer.damageMin);
+    check('tango+stick add no hp', padded.maxHp, archer.maxHp);
+    check('tango+stick add no attack speed', padded.attackSpeedBonus, archer.attackSpeedBonus);
     // Level 1 stats are untouched by asking for a hero with nothing bought.
-    check('no items is the base template', heroes.heroById('juggernaut', []), jug);
+    check('no items is the base template', heroes.heroById('swordmaster', []), sword);
 
     // What a shop at 0:00 would let you buy: one blade, six slots, 600 gold.
     check('one quelling blade', items.legalLoadout(['quelling_blade', 'quelling_blade']).length, 1);
@@ -147,14 +145,25 @@ const results = await page.evaluate(async () => {
     check('600 gold', items.legalLoadout(['circlet', 'circlet', 'circlet', 'circlet']).length, 3);
     check('unknown items dropped', items.legalLoadout(['rapier', 'iron_branch']).join(), 'iron_branch');
     check('garbage loadout', items.legalLoadout('rapier').length, 0);
+    check('tango cost', items.itemById('tango').cost, 90);
+    check('magic stick cost', items.itemById('magic_stick').cost, 200);
+    // `ItemStackable 1` on Tango: a second one joins the first slot as six charges.
+    const slots = items.inventorySlots(['tango', 'iron_branch', 'tango']);
+    check('tangos share a slot', slots.length, 2);
+    check('tango stack charges', slots[0].charges, 6);
+    check('faerie fire does not stack', items.inventorySlots(['faerie_fire', 'faerie_fire']).length, 2);
+    // Five branches fill five slots, and tangos keep fitting into the sixth.
+    check('tangos stack past the slot cap', items.legalLoadout([...Array(5).fill('iron_branch'), 'tango', 'tango', 'tango']).length, 8);
+    check('a full inventory refuses a new tango', items.legalLoadout([...Array(6).fill('iron_branch'), 'tango']).length, 6);
+    check('selling takes one off the stack', items.sellOne(['tango', 'iron_branch', 'tango'], 'tango').join(), 'tango,iron_branch');
   }
   {
     // Quell lands on enemy creeps, before armor, and nowhere else.
     const w = new World({
       ...DEFAULT_CONFIG,
-      heroId: 'juggernaut',
+      heroId: 'swordmaster',
       items: ['quelling_blade'],
-      enemyHeroId: 'juggernaut',
+      enemyHeroId: 'swordmaster',
       seed: 7,
     });
     const hero = w.player;
@@ -165,7 +174,8 @@ const results = await page.evaluate(async () => {
     check('no quell on a deny', w.expectedDamage(hero, ownMelee), avg * constants.armorMultiplier(2), 1e-6);
     check('no quell vs hero', w.expectedDamage(hero, w.enemy), avg * constants.armorMultiplier(w.enemy.armor), 1e-6);
     check('bot starts empty-handed', w.enemy.creepDamageBonus, 0);
-    // A config saved by an older build has no items at all.
+    // A config saved by an older build has no items at all, and names the
+    // hero by the id it had before the rename.
     const legacy = { ...DEFAULT_CONFIG, heroId: 'juggernaut', seed: 7 };
     delete legacy.items;
     check('config without items', new World(legacy).player.damageMin, 54);
@@ -217,7 +227,7 @@ const results = await page.evaluate(async () => {
 
   {
     // Melee: damage lands exactly on the end of the wind-up, no travel.
-    const { w, hero, creep } = rig('juggernaut');
+    const { w, hero, creep } = rig('swordmaster');
     w.orderAttack(hero, creep);
     const first = timeToDamage(w, creep);
     // Tight on purpose: at a 1/120 step a 0.232s attack point runs out inside
@@ -231,7 +241,7 @@ const results = await page.evaluate(async () => {
 
   {
     // Ranged: wind-up plus honest projectile travel over 100 units.
-    const { w, hero, creep } = rig('shadow_fiend');
+    const { w, hero, creep } = rig('frost_archer');
     w.orderAttack(hero, creep);
     const windup = constants.attackPointTime(hero.attackPoint, hero.attackSpeedBonus);
     check('ranged hit lands after travel', timeToDamage(w, creep), windup + 100 / hero.projectileSpeed, 0.02);
@@ -239,7 +249,7 @@ const results = await page.evaluate(async () => {
 
   {
     // Cancelling the wind-up throws the attack away entirely.
-    const { w, hero, creep } = rig('juggernaut');
+    const { w, hero, creep } = rig('swordmaster');
     w.orderAttack(hero, creep);
     for (let t = 0; t < 0.1; t += STEP) w.step(STEP);
     w.orderMove(hero, { x: hero.pos.x - 400, y: 0 });
@@ -251,7 +261,7 @@ const results = await page.evaluate(async () => {
   {
     // Attack-move: the flag has to actually drive acquisition. Park the creep
     // outside melee range but inside acquisition range and walk at it.
-    const { w, hero, creep } = rig('juggernaut');
+    const { w, hero, creep } = rig('swordmaster');
     creep.pos = { x: hero.pos.x + 400, y: hero.pos.y };
     w.orderAttackMove(hero, { x: hero.pos.x + 900, y: 0 });
     let acquired = false;
@@ -266,7 +276,7 @@ const results = await page.evaluate(async () => {
 
   {
     // ...but it must never pick up an ally, or it would deny for you.
-    const { w, hero, creep } = rig('juggernaut');
+    const { w, hero, creep } = rig('swordmaster');
     creep.team = 'radiant';
     creep.hp = creep.maxHp * 0.2; // well under the deny line
     creep.pos = { x: hero.pos.x + 300, y: hero.pos.y };
@@ -360,7 +370,7 @@ const results = await page.evaluate(async () => {
     // Contact behaviour. A creep walking into a hero should be turned aside and
     // go around, and the hero — being the heavier of the two — should be moved
     // far less than the creep is.
-    const w = new World({ ...DEFAULT_CONFIG, heroId: 'juggernaut', seed: 31, enemyHero: false, duration: 1e9 });
+    const w = new World({ ...DEFAULT_CONFIG, heroId: 'swordmaster', seed: 31, enemyHero: false, duration: 1e9 });
     const hero = w.player;
     const creep = [...w.units.values()].find((u) => u.team === 'radiant' && u.kind === 'melee_creep');
     w.units.clear();
@@ -421,11 +431,11 @@ const results = await page.evaluate(async () => {
 // renderer tests the cursor ray against.
 await page.evaluate(() => {
   window.__lht.start({
-    heroId: 'shadow_fiend',
+    heroId: 'frost_archer',
     duration: 600,
     deniesEnabled: true,
     enemyHero: false,
-    enemyHeroId: 'crystal_maiden',
+    enemyHeroId: 'swordmaster',
     enemyDifficulty: 3,
     aggroEnabled: true,
     showKillableHighlight: true,

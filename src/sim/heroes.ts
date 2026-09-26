@@ -40,8 +40,8 @@ interface HeroSource {
   baseAttackTime: number;
   /**
    * `BaseAttackSpeed`, before agility is added. Omitted when the hero keeps the
-   * 100 from `npc_dota_hero_base.txt`; Juggernaut's 110 is the one exception
-   * in this roster.
+   * 100 from `npc_dota_hero_base.txt`; the Swordmaster's 110 is the one
+   * exception in this roster.
    */
   baseAttackSpeed?: number;
   attackPoint: number;
@@ -85,8 +85,8 @@ export interface HeroTemplate extends UnitTemplate {
  * per point of the hero's primary attribute.
  *
  * The attack speed matters more than it looks. It divides both the attack
- * interval and the wind-up, so Juggernaut's authored 0.33 s attack point is
- * really 0.23 s in the lane: 110 base attack speed plus 32 agility. Treating
+ * interval and the wind-up, so the Swordmaster's authored 0.33 s attack point
+ * is really 0.23 s in the lane: 110 base attack speed plus 32 agility. Treating
  * every hero as if it had no attack speed — which is what a flat
  * `attackSpeedBonus` of 0 does — makes every swing in the drill slower than
  * the same swing in game, which is the one error a last-hit trainer cannot
@@ -149,34 +149,21 @@ function derive(h: HeroSource, items: readonly ItemId[] = []): HeroTemplate {
   };
 }
 
-/** Ordered by how hard the swing is to time, easiest first. */
+/**
+ * Ordered by how hard the swing is to time, easiest first.
+ *
+ * Two heroes, one melee and one ranged, because the feel of each has to be
+ * right before a third is worth having. The numbers are Valve's, from the
+ * script file named on each; the display names are our own, so nothing the
+ * player sees borrows a hero's name.
+ */
 const SOURCES: HeroSource[] = [
   {
-    id: 'sniper',
-    name: 'Sniper',
-    difficulty: 1,
-    note: 'A 0.17s attack point that agility cuts to about 0.13s, and a 3000-speed shot. Start here — the hit lands almost the instant you click.',
-    color: '#d9a441',
-    baseDamageMin: 13,
-    baseDamageMax: 19,
-    baseArmor: 0,
-    attackRange: 550,
-    baseAttackTime: 1.7,
-    attackPoint: 0.17,
-    attackBackswing: 0.7,
-    projectileSpeed: 3000,
-    moveSpeed: 285,
-    turnRate: 0.7,
-    primary: 'agi',
-    str: 19,
-    agi: 27,
-    int: 15,
-  },
-  {
-    id: 'juggernaut',
-    name: 'Juggernaut',
+    // npc_dota_hero_juggernaut.txt
+    id: 'swordmaster',
+    name: 'Swordmaster',
     difficulty: 2,
-    note: 'Standard melee timing, but 110 base attack speed plus 32 agility makes it the fastest swing here after Sniper. You have to walk into 150 range, so position matters as much as the click.',
+    note: 'Standard melee timing, but 110 base attack speed plus 32 agility cuts the 0.33s attack point to 0.23s, the quicker swing of the two. You have to walk into 150 range, so position matters as much as the click.',
     color: '#6fc3a8',
     baseDamageMin: 22,
     baseDamageMax: 24,
@@ -196,53 +183,11 @@ const SOURCES: HeroSource[] = [
     int: 14,
   },
   {
-    id: 'antimage',
-    name: 'Anti-Mage',
-    difficulty: 2,
-    note: 'The highest base damage in this roster and a short 150 range. Overkill damage means you can hit early — but the wave punishes you for standing in it.',
-    color: '#8ab4f8',
-    baseDamageMin: 29,
-    baseDamageMax: 33,
-    baseArmor: 2,
-    baseHpRegen: 1.5,
-    attackRange: 150,
-    baseAttackTime: 1.4,
-    attackPoint: 0.3,
-    attackBackswing: 0.64,
-    projectileSpeed: 0,
-    moveSpeed: 315,
-    turnRate: 0.6,
-    primary: 'agi',
-    str: 21,
-    agi: 25,
-    int: 12,
-  },
-  {
-    id: 'crystal_maiden',
-    name: 'Crystal Maiden',
+    // npc_dota_hero_drow_ranger.txt
+    id: 'frost_archer',
+    name: 'Frost Archer',
     difficulty: 4,
-    note: 'Only 16 agility, so the 0.45s attack point barely shrinks, and the shot crawls at 900. Two separate delays to lead.',
-    color: '#8fd8f2',
-    baseDamageMin: 28,
-    baseDamageMax: 34,
-    baseArmor: 0,
-    attackRange: 600,
-    baseAttackTime: 1.7,
-    attackPoint: 0.45,
-    attackBackswing: 0.55,
-    projectileSpeed: 900,
-    moveSpeed: 280,
-    turnRate: 0.6,
-    primary: 'int',
-    str: 17,
-    agi: 16,
-    int: 20,
-  },
-  {
-    id: 'drow',
-    name: 'Drow Ranger',
-    difficulty: 4,
-    note: '625 range keeps you safe, but a 0.5s attack point plus travel time makes the lead long and easy to over-click.',
+    note: '625 range keeps you out of the wave, but a 0.40s attack point and a 1250-speed arrow on top make the lead long and easy to over-click.',
     color: '#9fd6ff',
     baseDamageMin: 27,
     baseDamageMax: 34,
@@ -259,34 +204,30 @@ const SOURCES: HeroSource[] = [
     agi: 24,
     int: 15,
   },
-  {
-    id: 'shadow_fiend',
-    name: 'Shadow Fiend',
-    difficulty: 5,
-    note: 'The classic last-hit test: the lowest base damage in the game, a 0.5s attack point, 525 range, and you need every creep to stay even.',
-    color: '#b57bd6',
-    baseDamageMin: 16,
-    baseDamageMax: 22,
-    baseArmor: 0,
-    attackRange: 525,
-    baseAttackTime: 1.6,
-    attackPoint: 0.5,
-    attackBackswing: 0.53,
-    projectileSpeed: 1200,
-    moveSpeed: 305,
-    turnRate: 0.9,
-    primary: 'agi',
-    str: 19,
-    agi: 25,
-    int: 16,
-  },
 ];
+
+/**
+ * The ids these two had before they were renamed. Saved configs and run
+ * history still carry them, and a run is worth more read back under the hero
+ * it was played on than dropped.
+ */
+const RENAMED: Record<string, string> = {
+  juggernaut: 'swordmaster',
+  drow: 'frost_archer',
+};
 
 /** Every hero as it spawns with nothing bought. */
 export const HEROES: HeroTemplate[] = SOURCES.map((s) => derive(s));
 
+/** `id` as the current roster knows it, or undefined for a hero that is gone. */
+export function canonicalHeroId(id: string): string | undefined {
+  const current = RENAMED[id] ?? id;
+  return SOURCES.some((s) => s.id === current) ? current : undefined;
+}
+
 /** A hero's level 1 stats, carrying `items` if any are given. */
 export function heroById(id: string, items: readonly ItemId[] = []): HeroTemplate {
-  const source = SOURCES.find((s) => s.id === id) ?? SOURCES[0];
+  const canonical = canonicalHeroId(id);
+  const source = SOURCES.find((s) => s.id === canonical) ?? SOURCES[0];
   return items.length ? derive(source, items) : (HEROES.find((h) => h.id === source.id) ?? HEROES[0]);
 }

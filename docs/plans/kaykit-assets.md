@@ -13,14 +13,12 @@ phase 6 once the CLAUDE.md sections cover it.
 
   | Hero           | Character                 | Attack clip                    |
   |----------------|---------------------------|--------------------------------|
-  | Sniper         | Rogue + 2H crossbow       | `2H_Ranged_Shoot`              |
-  | Juggernaut     | Knight + 2H sword         | `2H_Melee_Attack_Slice`        |
-  | Anti-Mage      | Barbarian, dual axes      | `Dualwield_Melee_Attack_Slice` |
-  | Crystal Maiden | Mage + staff              | `Spellcast_Shoot`              |
-  | Shadow Fiend   | Skeleton_Mage (dark tint) | `Spellcast_Shoot`              |
-  | Drow Ranger    | Rogue_Hooded + 1H crossbow| `1H_Ranged_Shoot`              |
+  | Swordmaster    | Knight + 2H sword         | `2H_Melee_Attack_Slice`        |
+  | Frost Archer   | Rogue_Hooded + 1H crossbow| `1H_Ranged_Shoot`              |
 
-  The free packs have no bow, so Drow gets a crossbow.
+  The free packs have no bow, so the Frost Archer gets a crossbow. The roster
+  was cut to these two after this plan was written; the other four rows went
+  with the heroes.
 - **Scope:** phases 0-5 below, plus the phase 6 cleanup.
 - **Free tiers only.** Nothing from the paid Extra/Source tiers.
 
