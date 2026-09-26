@@ -40,6 +40,54 @@ phase 6 once the CLAUDE.md sections cover it.
   the attack clips above; creeps use `1H_Melee_Attack_Chop` (melee),
   `Spellcast_Shoot` (ranged) and `2H_Melee_Attack_Chop` (siege).
 
+## Scouting facts (measured in Blender 5.2.2, 2026-09-26)
+
+- `tools/fetch_assets.sh` puts Blender at
+  `tools/.cache/blender-5.2.2-linux-x64/blender` and the packs at
+  `tools/.cache/kaykit-{Skeletons,Adventures}/addons/kaykit_character_pack_*/`.
+- **Facing:** KayKit toes point Blender -Y, the same as the box creep, so
+  `rotation.y = PI/2 - facing` in `UnitView.sync` still holds.
+- **Import quirk:** Blender's glTF importer adds a stray `Icosphere` object on
+  every import. Ignore it for bounds and never export it.
+- **fps:** the import runs at 24 fps. Clip times below are in seconds
+  (frame / 24), sampled every 0.25 frame.
+- **Weapons:** Adventurers character GLBs contain every weapon as a mesh
+  parented (object `parent_bone`) to `handslot.r` or `handslot.l`, and the
+  build keeps only the ones listed. Skeletons character GLBs contain no
+  weapons; attach `Assets/gltf/Skeleton_{Blade,Staff,Axe,Shield_Large_A}.gltf`
+  to `handslot.r` or `handslot.l` in the build.
+  - Knight: 1H_Sword, 1H_Sword_Offhand, 2H_Sword, and 4 shields on `.l`
+  - Rogue and Rogue_Hooded: 1H_Crossbow, 2H_Crossbow, Knife, Knife_Offhand, Throwable
+  - Barbarian: 1H_Axe, 1H_Axe_Offhand, 2H_Axe, Barbarian_Round_Shield, Mug
+  - Mage: 1H_Wand, 2H_Staff, Spellbook, Spellbook_open
+  - Hats, capes and helmets are parented to `head` or `chest`. Keep them.
+- **Custom properties export natively:** with `export_extras=True`, Blender
+  5.2's exporter writes action custom properties to glTF `animations[i].extras`,
+  which GLTFLoader copies onto `AnimationClip.userData`. So
+  `act["hitTime"] = t` arrives as `clip.userData.hitTime`, and no JSON
+  patching is needed.
+- **Contact detector** (verified against trajectory tables): take whichever
+  of `handslot.r` or `handslot.l` has the higher peak speed. The contact is
+  the first sample after that peak where the speed drops below 40% of the
+  peak, i.e. the end of the fast stroke.
+
+  | Clip | Length | Hand | Contact |
+  |---|---|---|---|
+  | 1H_Melee_Attack_Chop | 1.067 | .r | 0.615 |
+  | 2H_Melee_Attack_Chop | 1.633 | .l | 0.875 |
+  | 2H_Melee_Attack_Slice | 1.100 | .l | 0.438 |
+  | Dualwield_Melee_Attack_Slice | 1.167 | .r | 0.646 |
+  | Spellcast_Shoot | 0.933 | .r | 0.271 (thrust ends ~0.29) |
+  | 2H_Ranged_Shoot | 1.067 | .l | 0.240 (recoil starts at 0.25) |
+  | 1H_Ranged_Shoot | 1.067 | .r | 0.240 (recoil starts at 0.25) |
+
+  The Skeleton rig gives identical times for the clips they share.
+- Other clips: Idle 1.083 s; Walking_A 1.083 s; Walking_D_Skeletons 1.583 s
+  (a shamble, with almost no arm swing); Death_A 0.792 s.
+- Sizes: the Skeletons atlas is `skeleton_texture.png`, 17 KB. Each
+  character's Adventurers atlas is `<name>_texture.png`. The eyes use a
+  separate material named `Glow`.
+
 ## Phases
 
 ### 0. Tooling
