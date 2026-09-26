@@ -28,6 +28,12 @@ Blender and packs from `tools/fetch_assets.sh`:
 melee_creep` for one look, `--renders DIR` for contact sheets under `xvfb-run`).
 It checks every file it writes and two builds are byte-identical.
 
+The sounds in `public/audio/` were generated with Stable Audio 3 Medium on a
+ComfyUI (`tools/audio/generate.py`, then `process.py` to rank and clean the
+takes) and picked by ear. `tools/audio/keepers.json` names the prompt and take
+behind every file, and `docs/sounds.md` says why each prompt reads as it does
+and why it is Medium and not Medium Base.
+
 `tools/blender/check_anim.py` checks the hero clips the way three.js plays
 them and films what it finds: `<blender> --background --python
 tools/blender/check_anim.py -- --glb public/models/heroes/swordmaster.glb
@@ -124,6 +130,13 @@ src/render3d/     The renderer: three.js stage + screen-space overlay
   projectileView.ts  Oriented bolts with trails; flat travel, no arc
   renderer3d.ts   Renderer3D: scene + views + ground rings, and unit picking
   annotations.ts  Screen-space layer: health bars, aggro timer, floaters
+src/audio/        Lane sound, render-side like the effects
+  sounds.ts       The manifest and the whole mix: file, group, level, voice cap
+  mixer.ts        Web Audio: groups, limiter, loading, voice stealing, jitter.
+                  Knows nothing about World.
+  laneAudio.ts    Reads World each frame and calls the mixer. The only file
+                  that knows what a DamageEvent is.
+  settings.ts     Volume and mute, in localStorage (key `lht.audio.v1`)
 src/ui/           menu.ts, hud.ts, results.ts — plain DOM over the canvas
   inventory.ts    The six item slots, shared by the menu, HUD and results
   itemIcons.ts    Item icons as SVG, in the style of the WC3 buttons
@@ -133,6 +146,7 @@ src/main.ts       Entry point: state machine (menu/playing/paused/results) + loo
 src/slice3d.ts    Debug entry point: unattended sim, clip histogram, free look
 tools/blender/    build_units.py builds the KayKit creeps in public/models/units/;
                   heroes.blend holds the hand-built heroes in public/models/heroes/
+tools/audio/      generate.py, process.py and the record of every sound's take
 ```
 
 ### Simulation rules
@@ -258,6 +272,31 @@ renderer follows it by `seq` to place impacts. The sim still owns `floaters`,
 which is a layering smell inherited from the first version; new presentational
 state should go in the renderer.
 
+### Audio
+
+Audio is render-side too, and follows `damageLog` by `seq` the same way:
+`laneAudio.ts` turns new damage events into hits, deaths and the coin or deny,
+new projectile ids into launches, and a hero's phase turning to `windup` into
+`sword_swing` or `bow_draw`. `DamageEvent.sourceId` exists for it, so your blow
+can be told from the bot's. It runs only while a drill plays; the menu
+backdrop is a real World and stays silent. Its jitter uses `Math.random()`,
+which is fine outside the sim and must never touch `world.rng`.
+
+The same rule as the overlay: the drill should sound like the game. Dota plays
+an attack sound on contact and a coin on a last hit, and nothing that says a
+creep is killable, so neither does this. The coin and deny are yours alone and
+centred; your hero plays centred, the bot's 4 dB lower where it happens.
+
+The sounds are **not** a startup dependency, unlike the models: they load
+beside them, and a file that fails warns once and stays silent. The context
+starts suspended, as browsers keep it until a gesture, and is resumed from the
+first overlay click. Pause and a hidden tab suspend it, which freezes what was
+mid-air as well. `__lht.audioStats()` counts the plays requested per sound,
+audible or not; `npm run check` holds it to a coin per last hit and a deny per
+deny over three minutes of lane, with a counting mixer standing in for Web
+Audio. Nothing but a person checks the mix. Levels live in `sounds.ts` and
+nowhere else; if the lane is muddy, turn the lane down, never the rewards up.
+
 ## Conventions
 
 - Strict TypeScript, including `noUnusedLocals` / `noUnusedParameters`.
@@ -276,6 +315,12 @@ state should go in the renderer.
 
 ## Known gaps
 
+- The mix in `sounds.ts` is the plan's starting levels and has not been tuned
+  by ear yet. The two tests for it: every last hit is audible without watching
+  the screen, and a creep's hits on your target can be told from the rest of
+  the lane, on laptop speakers and on headphones.
+- One take per sound. Where docs/sounds.md asks for two or three variations,
+  the pitch and level jitter on every play stands in for them.
 - `vite build` only picks up `index.html`; `slice3d.html` is dev-only until it is
   added as a rollup input.
 - There is no XP, no levels, no items beyond an optional starting buy, and no

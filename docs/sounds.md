@@ -1,8 +1,8 @@
 # Sounds
 
 The sounds to generate for the drill, and the prompts to generate them with.
-Modelled on what Dota itself plays in lane. Wiring them into the game is
-planned in `docs/plans/audio.md`.
+Modelled on what Dota itself plays in lane. How the game plays them is in
+the Audio section of CLAUDE.md, and the levels are in `src/audio/sounds.ts`.
 
 The rule is the same one the renderer follows: **the drill should sound like
 the game.** Dota gives you no audio cue for "this creep is killable", so none is
