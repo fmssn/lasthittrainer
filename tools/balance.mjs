@@ -19,13 +19,14 @@
  * Reports averages over a few fixed seeds; it is a measurement, not a pass/fail.
  */
 import { chromium } from 'playwright';
+import { chromiumPath } from './chromium.mjs';
 
 const url = process.env.URL ?? 'http://localhost:5173/';
 const SEEDS = [3, 17, 42];
 const MINUTES = 3;
 
 const browser = await chromium.launch({
-  executablePath: process.env.CHROMIUM ?? '/opt/pw-browsers/chromium',
+  executablePath: chromiumPath(),
   args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'],
 });
 const page = await browser.newPage();
