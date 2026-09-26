@@ -3,6 +3,7 @@ import type { Unit, Vec2 } from '../sim/types.ts';
 import type { World } from '../sim/world.ts';
 import { Scene3D } from './scene.ts';
 import { UnitView, type UnitAssets } from './unitView.ts';
+import { HEROES } from '../sim/heroes.ts';
 import {
   KIND_SCALE,
   KIND_SHIFT,
@@ -289,7 +290,8 @@ export class Renderer3D {
   /**
    * The catapult is authored directly in sim units and has no skeleton, so it
    * takes neither the shared rig nor its per-kind scale. Melee and ranged
-   * creeps are KayKit skeletons in their team's colours; heroes are the box rig.
+   * creeps are KayKit skeletons in their team's colours; heroes have models of
+   * their own.
    */
   private makeView(unit: Unit): UnitLike {
     if (unit.kind === 'siege_creep') return new SiegeView(unit);
@@ -297,10 +299,21 @@ export class Renderer3D {
     const asset =
       kind === 'melee_creep' || kind === 'ranged_creep'
         ? this.assets.creeps[kind][unit.team]
-        : this.assets.box;
+        : kind === 'hero'
+          ? this.heroAsset(unit)
+          : this.assets.box;
     const view = new UnitView(unit, asset, tintFor(unit));
     view.root.scale.multiplyScalar(KIND_SCALE[unit.kind] ?? 1);
     return view;
+  }
+
+  /**
+   * A unit carries its hero's display name but not its id, and the sim has no
+   * reason to grow a render-only field, so the id is looked up by name.
+   */
+  private heroAsset(unit: Unit) {
+    const id = HEROES.find((h) => h.name === unit.name)?.id;
+    return (id && this.assets.heroes[id]) || this.assets.box;
   }
 
   /** Units the sim has forgotten: hold the corpse long enough to read the fall. */

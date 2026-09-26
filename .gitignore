@@ -4,3 +4,4 @@ dist-artifact
 shots
 .DS_Store
 tools/.cache
+*.blend1

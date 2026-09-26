@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { Team, Unit } from '../sim/types.ts';
 import { attackPointTime } from '../sim/constants.ts';
+import { HEROES } from '../sim/heroes.ts';
 import { attachKit } from './weapons.ts';
 
 /**
@@ -11,11 +12,16 @@ import { attachKit } from './weapons.ts';
  * The clip choice is derived from sim state only — nothing here writes back
  * into the sim, and nothing in sim/ knows this file exists.
  *
- * Two kinds of file come through here. The box rig (melee_creep.glb) draws the
- * heroes: it is tinted per team and fitted with procedural kit, and its timing
- * numbers are the constants below. The KayKit skeletons (tools/blender/
- * build_units.py) draw the melee and ranged creeps: they carry their own
- * colours and weapons, and their hit time and stride in the file.
+ * Three kinds of file come through here.
+ * - The hero models (models/heroes/, built by hand in tools/blender/heroes.blend)
+ *   wear their own gear, carry their hit time on the armature, and take the
+ *   team colour on their `Team` material only.
+ * - The KayKit skeletons (tools/blender/build_units.py) draw the melee and
+ *   ranged creeps. They carry their own colours and weapons, and their hit time
+ *   and stride in the file.
+ * - The box rig (melee_creep.glb) is what is left for anything else. It is
+ *   tinted per team and fitted with procedural kit, and its timing numbers are
+ *   the constants below.
  */
 
 /** Blender scene fps the clips were authored at. */
@@ -71,13 +77,24 @@ export interface CreepAsset {
   groundSpeed: number | null;
   /** The box rig: tinted per team and fitted with procedural kit. */
   box: boolean;
+  /**
+   * A hero model: only its `Team` material takes the tint. Everything else on
+   * it is authored colour, and tinting skin and steel with the team colour is
+   * what made the box rig read as a painted mannequin.
+   */
+  teamTint: boolean;
 }
 
 /** The files the renderer draws with. Siege creeps and towers need none. */
 export interface UnitAssets {
   box: CreepAsset;
   creeps: Record<'melee_creep' | 'ranged_creep', Record<Team, CreepAsset>>;
+  /** By hero id. Every hero in HEROES has one. */
+  heroes: Record<string, CreepAsset>;
 }
+
+/** The one material a hero model lets the runtime recolour. */
+const TEAM_MATERIAL = 'Team';
 
 /** Base64 payload of a `data:` URL, as bytes. */
 function decodeDataUrl(url: string): ArrayBuffer {
@@ -113,7 +130,7 @@ function extra(clip: THREE.AnimationClip, key: string): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? v : null;
 }
 
-/** The box rig, which the heroes are drawn with. */
+/** The box rig, the fallback for anything without a model of its own. */
 export async function loadCreep(url: string): Promise<CreepAsset> {
   const gltf = await loadGltf(url);
   return {
@@ -123,6 +140,40 @@ export async function loadCreep(url: string): Promise<CreepAsset> {
     hitTime: ATTACK_HIT_TIME,
     groundSpeed: null,
     box: true,
+    teamTint: false,
+  };
+}
+
+/**
+ * A hero model from tools/blender/heroes.blend. It is authored in metres like
+ * the box rig, so it takes the same scale. Its contact (or release) time is a
+ * custom property on the armature, which the exporter writes as node extras,
+ * so it travels with the file rather than living in a constant that the next
+ * re-export silently invalidates. A file without one is refused, for the same
+ * reason the KayKit loader refuses one.
+ */
+export async function loadHero(url: string): Promise<CreepAsset> {
+  const gltf = await loadGltf(url);
+  const attack = gltf.animations.find((c) => c.name === 'Attack')!;
+  const found: number[] = [];
+  gltf.scene.traverse((o) => {
+    const v = o.userData.hitTime;
+    if (typeof v === 'number' && Number.isFinite(v)) found.push(v);
+  });
+  const hitTime = found[0];
+  if (hitTime === undefined || hitTime <= 0 || hitTime >= attack.duration) {
+    throw new Error(`${name(url)}: the armature needs a hitTime inside (0, ${attack.duration.toFixed(3)}) s`);
+  }
+  return {
+    scene: gltf.scene,
+    clips: gltf.animations,
+    scale: MODEL_SCALE,
+    hitTime,
+    // The walk was not authored against a measured stride, so it keeps the
+    // box rig's cadence rule.
+    groundSpeed: null,
+    box: false,
+    teamTint: true,
   };
 }
 
@@ -163,6 +214,7 @@ export async function loadKayKitCreep(url: string): Promise<CreepAsset> {
     hitTime,
     groundSpeed,
     box: false,
+    teamTint: false,
   };
 }
 
@@ -173,12 +225,19 @@ export async function loadKayKitCreep(url: string): Promise<CreepAsset> {
  */
 export async function loadUnitAssets(url: (path: string) => string): Promise<UnitAssets> {
   const creep = (kind: string, team: Team) => loadKayKitCreep(url(`models/units/${kind}_${team}.glb`));
-  const [box, meleeR, meleeD, rangedR, rangedD] = await Promise.all([
-    loadCreep(url('models/melee_creep.glb')),
-    creep('melee_creep', 'radiant'),
-    creep('melee_creep', 'dire'),
-    creep('ranged_creep', 'radiant'),
-    creep('ranged_creep', 'dire'),
+  // One model per hero in the roster. A missing one is as fatal as a creep:
+  // falling back to the box rig would put the wrong swing timing in front of
+  // the player.
+  const heroIds = HEROES.map((h) => h.id);
+  const [[box, meleeR, meleeD, rangedR, rangedD], heroModels] = await Promise.all([
+    Promise.all([
+      loadCreep(url('models/melee_creep.glb')),
+      creep('melee_creep', 'radiant'),
+      creep('melee_creep', 'dire'),
+      creep('ranged_creep', 'radiant'),
+      creep('ranged_creep', 'dire'),
+    ]),
+    Promise.all(heroIds.map((id) => loadHero(url(`models/heroes/${id}.glb`)))),
   ]);
   return {
     box,
@@ -186,6 +245,7 @@ export async function loadUnitAssets(url: (path: string) => string): Promise<Uni
       melee_creep: { radiant: meleeR, dire: meleeD },
       ranged_creep: { radiant: rangedR, dire: rangedD },
     },
+    heroes: Object.fromEntries(heroIds.map((id, i) => [id, heroModels[i]])),
   };
 }
 
@@ -215,11 +275,15 @@ export class UnitView {
 
     this.root.traverse((o) => {
       if (!(o instanceof THREE.Mesh)) return;
-      o.castShadow = true;
+      const mat = o.material as THREE.MeshStandardMaterial;
+      // A hero's sword trail and release flash are translucent sheets; a
+      // shadow of one would be a solid grey shape on the lane.
+      o.castShadow = !mat.transparent;
       o.receiveShadow = true;
-      if (asset.box && tint !== undefined) {
+      const tinted = asset.box || (asset.teamTint && mat.name === TEAM_MATERIAL);
+      if (tinted && tint !== undefined) {
         // Clone so the two teams do not share one material instance.
-        o.material = (o.material as THREE.MeshStandardMaterial).clone();
+        o.material = mat.clone();
         (o.material as THREE.MeshStandardMaterial).color.setHex(tint);
       }
     });

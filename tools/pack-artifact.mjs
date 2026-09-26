@@ -9,7 +9,7 @@
  * pull are scripts from a short CDN allowlist and stylesheets from Google
  * Fonts. A same-origin `fetch()` for the GLB, or a `<script src>` next to the
  * page, is exactly the kind of request such a policy drops silently. Inlining
- * sidesteps the whole question, and at ~2.5MB the page is nowhere near any
+ * sidesteps the whole question, and at ~4.5MB the page is nowhere near any
  * size limit worth worrying about.
  *
  * The output is a fragment, not a document: no doctype, no <html>, no <head>.
@@ -52,9 +52,11 @@ const css = escapeClose(readFileSync(join('dist/assets', styles[0]), 'utf8'), 's
 // asks for it.
 const glbs = [
   'models/melee_creep.glb',
-  ...readdirSync('public/models/units')
-    .filter((f) => f.endsWith('.glb'))
-    .map((f) => `models/units/${f}`),
+  ...['units', 'heroes'].flatMap((dir) =>
+    readdirSync(`public/models/${dir}`)
+      .filter((f) => f.endsWith('.glb'))
+      .map((f) => `models/${dir}/${f}`),
+  ),
 ];
 const models = Object.fromEntries(
   glbs.map((p) => [p, `data:model/gltf-binary;base64,${readFileSync(join('public', p)).toString('base64')}`]),
