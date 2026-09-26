@@ -22,6 +22,17 @@ npm run shot     # screenshot the menu, a formed lane and results (needs npm run
 npm run balance  # difficulty calibration for the bot (needs npm run dev)
 ```
 
+```bash
+npm run pack     # vite build inlined into one file: dist-artifact/last-hit-trainer.html
+```
+
+The packed page is published as the **Last Hit Trainer** artifact
+(https://claude.ai/artifact/AFfVgmjJKRdnD5N7mq2k2j). **After any large change,
+run `npm run pack` and republish it to that same URL** — update it in place,
+never publish a new one. Load the packed file in a browser first and check the
+menu comes up and a drill starts; the pack step inlines everything, so a page
+that builds can still fail to boot.
+
 There is no linter. `npm run build` (i.e. `tsc --noEmit`) plus `npm run check`
 are the automated checks — run both after every change.
 
