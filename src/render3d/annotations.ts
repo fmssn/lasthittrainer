@@ -1,16 +1,15 @@
 import * as THREE from 'three';
 import type { Unit, Vec2 } from '../sim/types.ts';
 import type { World } from '../sim/world.ts';
-import { AGGRO_DURATION, DENY_THRESHOLD, attackPointTime } from '../sim/constants.ts';
+import { AGGRO_DURATION } from '../sim/constants.ts';
 import { clamp } from '../sim/math.ts';
-import { isPlayerTarget } from './targetAids.ts';
 import { healthBarHeight } from './appearance.ts';
 
 /**
  * The screen-space layer of the 3D renderer.
  *
- * Health bars, the deny line, the damage preview and the windup arc are read at
- * a glance mid-swing, so they must not shrink or tilt with the stage. They are
+ * Health bars are read at a glance mid-swing, so they must not shrink or tilt
+ * with the stage. They are
  * drawn on a 2D canvas over the WebGL one, at positions projected through the
  * same camera — the 3D stage stays the world, this stays the instrument.
  *
@@ -24,8 +23,6 @@ import { healthBarHeight } from './appearance.ts';
 const COLORS = {
   radiant: '#5fbf7a',
   dire: '#d8615a',
-  killable: '#ffd479',
-  deny: '#7fd6a2',
   text: '#e6edf3',
   shadow: 'rgba(0,0,0,0.85)',
 };
@@ -97,13 +94,11 @@ export class Annotations {
     ctx.clearRect(0, 0, this.w, this.h);
     ctx.save();
 
-    this.drawOrderLine(world);
     // Far units first, so a near health bar wins the overlap.
     const sorted = world.aliveUnits().sort((a, b) => a.pos.y - b.pos.y);
     for (const u of sorted) {
-      if (u.phase === 'windup') this.drawWindup(world, u);
       if (u.aggroTimer > 0) this.drawAggro(u);
-      if (u.kind !== 'tower') this.drawHealthBar(world, u, hoverId);
+      if (u.kind !== 'tower') this.drawHealthBar(u, hoverId);
     }
     this.drawFloaters(world);
 
@@ -112,7 +107,7 @@ export class Annotations {
 
   // ------------------------------------------------------------ health bars
 
-  private drawHealthBar(world: World, u: Unit, hoverId: number | null) {
+  private drawHealthBar(u: Unit, hoverId: number | null) {
     const ctx = this.ctx;
     const head = this.project(u.pos, healthBarHeight(u));
     if (this.behind()) return;
@@ -123,79 +118,20 @@ export class Annotations {
     const y = Math.round(head.y - h);
     const frac = clamp(u.hp / u.maxHp, 0, 1);
 
-    // A creep you could kill right now gets a gold frame. This is the single
-    // most useful thing on screen while last hitting, so it is a property of
-    // the bar rather than something to hunt for on the ground.
-    const killable =
-      world.config.showKillableHighlight &&
-      !hero &&
-      world.player.alive &&
-      isPlayerTarget(world, u) &&
-      world.shouldSwingNow(world.player, u);
-
+    // Nothing but the bar itself: no deny line, no damage preview, no
+    // killable frame. Dota draws none of them, and a drill that leans on them
+    // trains you to read the overlay rather than the creep.
     ctx.fillStyle = COLORS.shadow;
     ctx.fillRect(x - 1, y - 1, w + 2, h + 2);
     ctx.fillStyle = u.team === 'radiant' ? COLORS.radiant : COLORS.dire;
     ctx.fillRect(x, y, Math.round(w * frac), h);
-
-    // Damage already in the air, as a pale chunk at the leading edge: what the
-    // bar will read once everything in flight lands.
-    if (u.incomingDamage > 0) {
-      const after = clamp((u.hp - u.incomingDamage) / u.maxHp, 0, 1);
-      ctx.fillStyle = 'rgba(255,255,255,0.4)';
-      ctx.fillRect(x + w * after, y, Math.max(1, w * (frac - after)), h);
-    }
-
-    if (!hero) {
-      // The 50% deny line, on every creep bar. Drawing it always is the point:
-      // the threshold has to become something you see rather than compute.
-      const dx = Math.round(x + w * DENY_THRESHOLD);
-      ctx.fillStyle = frac <= DENY_THRESHOLD ? COLORS.deny : 'rgba(255,255,255,0.5)';
-      ctx.fillRect(dx, y - 2, 1, h + 4);
-    }
-
-    // Where your next hit would leave it, as a notch on the bar.
-    if (world.config.showDamagePreview && !hero && world.player.alive && isPlayerTarget(world, u)) {
-      const dmg = world.expectedDamage(world.player, u);
-      const after = clamp((world.hpAtLanding(world.player, u) - dmg) / u.maxHp, 0, 1);
-      ctx.fillStyle = COLORS.killable;
-      ctx.fillRect(Math.round(x + w * after) - 1, y - 3, 2, h + 6);
-    }
-
-    if (killable) {
-      ctx.strokeStyle = COLORS.killable;
-      ctx.lineWidth = 2;
-      ctx.strokeRect(x - 2.5, y - 2.5, w + 5, h + 5);
-    }
 
     if (hoverId === u.id) {
       this.label(`${Math.ceil(u.hp)} / ${Math.round(u.maxHp)}`, head.x, y - 7, COLORS.text, 11);
     }
   }
 
-  // ------------------------------------------------------------------- swing
-
-  /**
-   * A shrinking arc showing exactly how much wind-up is left.
-   *
-   * The player's own swing is drawn bright and thick because it is the thing
-   * being trained; everyone else's is faint, so a wave mid-fight does not turn
-   * into a screen full of rings.
-   */
-  private drawWindup(world: World, u: Unit) {
-    const ctx = this.ctx;
-    const s = this.project(u.pos, 10);
-    if (this.behind()) return;
-    const mine = u.id === world.player.id;
-    const r = Math.max(10, u.radius * this.pxPerUnitAt(u.pos) + (mine ? 16 : 10));
-    const total = attackPointTime(u.attackPoint, u.attackSpeedBonus);
-    const p = clamp(1 - u.phaseTimer / total, 0, 1);
-    ctx.strokeStyle = mine ? COLORS.killable : 'rgba(255,255,255,0.3)';
-    ctx.lineWidth = mine ? 3 : 1.5;
-    ctx.beginPath();
-    ctx.arc(s.x, s.y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * p);
-    ctx.stroke();
-  }
+  // ------------------------------------------------------------------- aggro
 
   /** Forced aggro: these creeps are coming for you. */
   private drawAggro(u: Unit) {
@@ -210,22 +146,6 @@ export class Annotations {
     ctx.arc(s.x, s.y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (u.aggroTimer / AGGRO_DURATION));
     ctx.stroke();
     ctx.globalAlpha = 1;
-  }
-
-  private drawOrderLine(world: World) {
-    const target = world.get(world.player.attackTargetId);
-    if (!target || !world.player.alive) return;
-    const a = this.project(world.player.pos, 40);
-    const b = this.project(target.pos, 40);
-    const ctx = this.ctx;
-    ctx.strokeStyle = 'rgba(255,212,121,0.28)';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 6]);
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-    ctx.stroke();
-    ctx.setLineDash([]);
   }
 
   private drawFloaters(world: World) {

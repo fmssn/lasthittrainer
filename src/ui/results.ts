@@ -111,13 +111,10 @@ function takeaway(
     return 'Under half. Stop trying to hit every creep — pick the one that will drop next and commit to that single timing.';
   }
   if (config.deniesEnabled && record.denyRate < 0.15 && record.accuracy > 0.65) {
-    return 'Last hits are landing, denies are not. Watch the 50% line on your own creeps and keep the A-key hand ready between your own attacks.';
+    return 'Last hits are landing, denies are not. Watch your own creeps drop toward half HP and keep the A-key hand ready between your own attacks.';
   }
   if (config.enemyHero && stats.enemyLastHits > stats.lastHits) {
     return 'The enemy hero out-farmed you. Try pulling their creep aggro with a right-click when they step up — their creeps chasing them is your free window.';
-  }
-  if (record.accuracy > 0.85) {
-    return 'That accuracy is real. Turn off the killable highlight and damage preview and run it again — the timing has to live in your hands, not the UI.';
   }
   return 'Solid run. Push the enemy difficulty up one notch, or switch to a hero with a slower attack point.';
 }

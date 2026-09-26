@@ -809,18 +809,7 @@ export class World {
     }
   }
 
-  // ------------------------------------------------------------------ hints
-
-  /**
-   * True when starting a swing *right now* should land the killing blow. This
-   * is the timing the trainer is actually teaching: by the time a creep is
-   * visibly one hit from death it is already too late to click.
-   */
-  shouldSwingNow(source: Unit, target: Unit): boolean {
-    if (target.kind === 'tower' || !target.alive) return false;
-    const hp = this.hpAtLanding(source, target);
-    return hp > 0 && hp <= this.expectedDamage(source, target);
-  }
+  // ------------------------------------------------------------------ picking
 
   /** Nearest valid target under the cursor, Dota-style click priority. */
   unitAt(point: Vec2, forUnit: Unit): Unit | null {
