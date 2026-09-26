@@ -77,7 +77,7 @@ export class Input {
 
   private onWheel(e: WheelEvent) {
     e.preventDefault();
-    this.renderer.zoom(e.deltaY > 0 ? -0.1 : 0.1);
+    this.renderer.zoom(wheelNotches(e));
   }
 
   private onKeyDown(e: KeyboardEvent) {
@@ -113,4 +113,24 @@ export class Input {
       world.orderStop(world.player);
     }
   }
+}
+
+/**
+ * A wheel event as mouse-wheel notches, positive for zooming out.
+ *
+ * Counting events instead, as this used to, is right for a mouse and wrong for
+ * a trackpad: a two-finger swipe or a pinch arrives as dozens of small events,
+ * and each of them zoomed a full notch, so one gesture ran the whole range. A
+ * notch is 100 px in Chromium and 3 lines in Firefox's line mode. One event
+ * never counts for more than a notch, so an accelerated wheel cannot jump the
+ * range in a single tick either.
+ */
+export function wheelNotches(e: WheelEvent): number {
+  const notches =
+    e.deltaMode === WheelEvent.DOM_DELTA_LINE
+      ? e.deltaY / 3
+      : e.deltaMode === WheelEvent.DOM_DELTA_PAGE
+        ? e.deltaY
+        : e.deltaY / 100;
+  return Math.max(-1, Math.min(1, notches));
 }

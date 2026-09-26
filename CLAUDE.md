@@ -193,8 +193,8 @@ mid-swing (health bars, floaters) is drawn by `annotations.ts` on a 2D canvas
 over the stage.
 
 There are no training aids. A killable highlight, damage preview, deny line on
-the bars, wind-up arc, range ring, a dashed line to your attack target and an A-key hint that lit up over a
-denyable creep all existed and were removed as distracting: the drill should
+the bars, an in-flight damage chunk, wind-up arc, range ring, a dashed line to
+your attack target and an A-key hint that lit up over a denyable creep all existed and were removed as distracting: the drill should
 look like the game, so the timing is read off the creep and not the overlay.
 Do not add them back without being asked.
 Sim→three mapping is fixed in `scene.ts`: sim `(x, y)` → three `(x, 0, y)`, +Y up.
