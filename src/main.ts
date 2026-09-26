@@ -8,6 +8,7 @@ import { Hud } from './ui/hud.ts';
 import { Menu } from './ui/menu.ts';
 import { Results } from './ui/results.ts';
 import { Mixer } from './audio/mixer.ts';
+import { LaneAudio } from './audio/laneAudio.ts';
 
 /**
  * Where a file under public/ comes from.
@@ -43,6 +44,7 @@ const overlay = document.getElementById('overlay') as HTMLDivElement;
 // underneath it and it stays transparent on top, so input never changes hands.
 let renderer: Renderer3D;
 let input: Input;
+let laneAudio: LaneAudio;
 const hud = new Hud(overlay);
 
 let state: State = 'menu';
@@ -104,6 +106,12 @@ async function boot() {
 
   renderer = new Renderer3D(app, canvas, assets);
   input = new Input(canvas, renderer);
+  laneAudio = new LaneAudio(mixer, (p) => {
+    const s = renderer.toScreen(p, 50);
+    const w = canvas.clientWidth || 1;
+    const h = canvas.clientHeight || 1;
+    return { x: (s.x / w) * 2 - 1, onScreen: s.x >= 0 && s.x <= w && s.y >= 0 && s.y <= h };
+  });
   input.onPause = () => {
     if (state === 'playing') setPaused(true);
     else if (state === 'paused') setPaused(false);
@@ -142,6 +150,8 @@ function start(config: DrillConfig) {
   renderer.snap(world.player.pos);
   renderer.cursor = { ...world.player.pos };
   input.attach(world);
+  mixer.resume();
+  laneAudio.reset(world);
   menu.hide();
   results.hide();
   pauseScreen.hidden = true;
@@ -169,6 +179,7 @@ function finish() {
 
 function toMenu() {
   world = null;
+  mixer.stop();
   input.attach(null);
   hud.hide();
   results.hide();
@@ -190,6 +201,7 @@ function frame(now: number) {
     // Lead the camera toward the enemy side; that is where the creeps you are
     // farming always are.
     renderer.follow(world.player.pos, elapsed, CAMERA_LEAD);
+    laneAudio.update(world);
     hud.update(world);
     if (world.finished) finish();
   }
