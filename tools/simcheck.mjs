@@ -367,9 +367,8 @@ const results = await page.evaluate(async () => {
   }
 
   {
-    // Contact behaviour. A creep walking into a hero should be turned aside and
-    // go around, and the hero — being the heavier of the two — should be moved
-    // far less than the creep is.
+    // Contact behaviour. Nothing shoves anything in Dota: a creep walking into
+    // a hero goes around him, and he does not give an inch.
     const w = new World({ ...DEFAULT_CONFIG, heroId: 'swordmaster', seed: 31, enemyHero: false, duration: 1e9 });
     const hero = w.player;
     const creep = [...w.units.values()].find((u) => u.team === 'radiant' && u.kind === 'melee_creep');
@@ -378,18 +377,64 @@ const results = await page.evaluate(async () => {
     w.units.set(creep.id, creep);
     creep.pos = { x: 2000, y: 0 };
     creep.attackTargetId = null;
-    hero.pos = { x: 2000 + creep.radius + hero.radius - 4, y: 0 };
+    const touching = constants.bodyRadius(creep.kind) + constants.bodyRadius(hero.kind);
+    hero.pos = { x: 2000 + touching + 2, y: 0 };
     const heroFrom = { x: hero.pos.x, y: hero.pos.y };
     let deflection = 0;
+    let closest = Infinity;
     for (let i = 0; i < 2.5 * 120; i++) {
       w.step(STEP);
       deflection = Math.max(deflection, Math.abs(creep.pos.y));
+      closest = Math.min(closest, Math.hypot(hero.pos.x - creep.pos.x, hero.pos.y - creep.pos.y));
     }
     const heroMoved = Math.hypot(hero.pos.x - heroFrom.x, hero.pos.y - heroFrom.y);
     check('a blocked creep is turned aside rather than stalled', deflection > 10, true);
     check('the creep still gets past', creep.pos.x > 2500, true);
-    // It walked 800 units through him; he should have given ground in tens.
-    check('a hero outweighs a creep in a shove', heroMoved < 80, true);
+    check('a creep cannot shove a hero', heroMoved, 0, 1e-9);
+    check('a creep does not walk into a hero', closest >= touching - 1e-6, true);
+  }
+
+  {
+    // And the other way round: a hero ordered through a creep does not move it,
+    // and a line of bodies across the lane stops him dead.
+    const w = new World({ ...DEFAULT_CONFIG, heroId: 'swordmaster', seed: 31, enemyHero: false, duration: 1e9 });
+    const hero = w.player;
+    const all = [...w.units.values()];
+    const mine = all.find((u) => u.team === 'radiant' && u.kind === 'melee_creep');
+    const theirs = all.find((u) => u.team === 'dire' && u.kind === 'melee_creep');
+    w.units.clear();
+    for (const u of [hero, mine, theirs]) w.units.set(u.id, u);
+    // Two creeps trading in melee range stand still, so anything that moves
+    // them while the hero walks through was the hero.
+    mine.pos = { x: 2200, y: 0 };
+    theirs.pos = { x: 2290, y: 0 };
+    mine.attackTargetId = theirs.id;
+    theirs.attackTargetId = mine.id;
+    settle(w, 0.5);
+    const before = [{ ...mine.pos }, { ...theirs.pos }];
+    hero.pos = { x: 2000, y: 0 };
+    hero.moveTarget = { x: 2600, y: 0 };
+    for (let i = 0; i < 2 * 120; i++) w.step(STEP);
+    const shoved = Math.max(
+      Math.hypot(mine.pos.x - before[0].x, mine.pos.y - before[0].y),
+      Math.hypot(theirs.pos.x - before[1].x, theirs.pos.y - before[1].y),
+    );
+    check('a hero cannot shove a creep', shoved, 0, 1e-9);
+    check('a hero walks round a creep in his way', hero.pos.x > 2400, true);
+
+    // A wall of bodies from lane edge to lane edge. They stand still because
+    // they cannot move, not because anything holds them.
+    w.units.clear();
+    w.units.set(hero.id, hero);
+    const r = constants.bodyRadius('melee_creep');
+    for (let y = -constants.LANE_HALF_WIDTH, i = 0; y <= constants.LANE_HALF_WIDTH; y += 2 * r, i++) {
+      const c = { ...mine, id: 9000 + i, pos: { x: 2200, y }, moveSpeed: 0, attackTargetId: null, moveTarget: null };
+      w.units.set(c.id, c);
+    }
+    hero.pos = { x: 2000, y: 10 };
+    hero.moveTarget = { x: 2600, y: 10 };
+    for (let i = 0; i < 2 * 120; i++) w.step(STEP);
+    check('a hero is bodyblocked by a line of creeps', hero.pos.x < 2200, true);
   }
 
   {
@@ -403,12 +448,12 @@ const results = await page.evaluate(async () => {
         const a = alive[i];
         const b = alive[j];
         if (a.moveSpeed <= 0 && b.moveSpeed <= 0) continue;
-        const gap = a.radius + b.radius - Math.hypot(a.pos.x - b.pos.x, a.pos.y - b.pos.y);
-        worst = Math.max(worst, gap);
+        const min = constants.bodyRadius(a.kind) + constants.bodyRadius(b.kind);
+        worst = Math.max(worst, min - Math.hypot(a.pos.x - b.pos.x, a.pos.y - b.pos.y));
       }
     }
-    // One step of overlap can survive a frame; a body-length cannot.
-    check('units do not end up stacked', worst < 8, true);
+    // Only a freshly spawned clump may overlap, and only for a frame.
+    check('units do not end up stacked', worst < 1, true);
   }
 
   // --- Determinism: same seed, same lane ----------------------------------
@@ -449,13 +494,21 @@ await page.waitForTimeout(2500);
 
 const aim = await page.evaluate(() => {
   const w = window.__lht.world;
-  const creep = [...w.units.values()].find(
-    (u) => u.alive && u.team === 'dire' && u.kind === 'melee_creep',
-  );
-  if (!creep) return null;
+  const alive = [...w.units.values()].filter((u) => u.alive);
   // Aim at the chest, which is what the cursor looks like it is over and the
   // whole reason picking uses a cylinder instead of the ground point.
-  return { id: creep.id, at: window.__lht.toScreen(creep.pos, 55) };
+  const chest = (u) => window.__lht.toScreen(u.pos, 55);
+  // The creep standing clearest of the rest on screen, so the click tests
+  // picking rather than which of two overlapping bodies is in front.
+  let best = null;
+  for (const creep of alive.filter((u) => u.team === 'dire' && u.kind === 'melee_creep')) {
+    const at = chest(creep);
+    const room = Math.min(
+      ...alive.filter((u) => u !== creep).map((u) => Math.hypot(chest(u).x - at.x, chest(u).y - at.y)),
+    );
+    if (!best || room > best.room) best = { id: creep.id, at, room };
+  }
+  return best;
 });
 
 if (!aim) {

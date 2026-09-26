@@ -21,6 +21,7 @@ import {
   attackBackswingTime,
   attackInterval,
   attackPointTime,
+  bodyRadius,
   turnSpeed,
 } from './constants.ts';
 import { MELEE_CREEP, RANGED_CREEP, SIEGE_CREEP, TOWER, resetIds, rollDamage, spawnUnit } from './units.ts';
@@ -38,30 +39,13 @@ export const LANE_CENTER = (RADIANT_SPAWN + DIRE_SPAWN) / 2;
 export const HERO_RESPAWN_TIME = 6;
 
 /**
- * How much of a contact goes into sliding past rather than backing off.
- *
- * Worth being honest about what this does and does not buy. It fixes contact
- * behaviour: without it two units meeting head-on grind along the lane locked
- * together, because a pure normal shove gives neither of them a way around.
- * What it does not buy is creep blocking in any meaningful sense — measured,
- * one hero interposing costs a four-creep wave about 3% of its progress at any
- * setting, because one body can only touch one creep and the front of the wave
- * keeps changing. Real blocking happens on the narrow path out of the barracks,
- * which this drill does not have: waves spawn into open lane.
+ * Contacts resolved per step for a unit on the move. Sliding off one body can
+ * run it into a second; a third means it is wedged, and it stops.
  */
-const SLIDE = 0.45;
+const SLIDE_PASSES = 3;
 
 function isCreep(u: Unit): boolean {
   return u.kind === 'melee_creep' || u.kind === 'ranged_creep' || u.kind === 'siege_creep';
-}
-
-/**
- * How hard a unit is to shove. A hero outweighs a lane creep by enough to hold
- * a line in front of one, and buildings do not budge.
- */
-function pushMass(u: Unit): number {
-  if (u.moveSpeed <= 0) return Infinity;
-  return u.kind === 'hero' ? 3 : 1;
 }
 
 function floaterColor(kind: FloaterKind): string {
@@ -474,11 +458,95 @@ export class World {
     }
 
     const a = angleTo(u.pos, goal);
-    this.turnToward(u, a, dt);
     const step = Math.min(d, u.moveSpeed * dt);
-    u.pos.x += Math.cos(a) * step;
-    u.pos.y += Math.sin(a) * step;
-    u.pos.y = clamp(u.pos.y, -LANE_HALF_WIDTH, LANE_HALF_WIDTH);
+    // A chase re-aims at a fresh spot beside its target every step, so it can
+    // afford to go round; a move order is to one fixed point.
+    const move = this.slide(u, target ? null : goal, Math.cos(a) * step, Math.sin(a) * step);
+    if (!move) {
+      // The spot is taken by a body. Dota stops you against it rather than
+      // circling it forever, and a creep in the way of a creep waits its turn.
+      if (!target && this.occupied(u, goal)) u.moveTarget = null;
+      return;
+    }
+    this.turnToward(u, Math.atan2(move.y, move.x), dt);
+    u.pos.x += move.x;
+    u.pos.y = clamp(u.pos.y + move.y, -LANE_HALF_WIDTH, LANE_HALF_WIDTH);
+  }
+
+  /**
+   * Where a step of (dx, dy) actually takes `u`, or null if it cannot move.
+   *
+   * Nothing in Dota shoves anything else: a unit walking into another stops
+   * against it or goes around, and the one standing there does not budge. So
+   * the mover alone gives way. Walking into a body keeps the part of the step
+   * that runs along it and drops the part that runs into it, then takes the
+   * full stride that way, which is what reads as stepping around. Wedged
+   * between bodies, or pressed against one standing on the spot it was sent
+   * to, it stops: that is being bodyblocked.
+   */
+  private slide(u: Unit, goal: Vec2 | null, dx: number, dy: number): Vec2 | null {
+    const step = Math.hypot(dx, dy);
+    for (let pass = 0; pass <= SLIDE_PASSES; pass++) {
+      const hit = this.blockerOf(u, dx, dy);
+      if (!hit) return { x: dx, y: dy };
+      if (pass === SLIDE_PASSES || (goal && this.occupied(u, goal, hit))) return null;
+      const nx = u.pos.x - hit.pos.x;
+      const ny = u.pos.y - hit.pos.y;
+      const n = Math.hypot(nx, ny) || 1;
+      const ux = nx / n;
+      const uy = ny / n;
+      const into = dx * ux + dy * uy;
+      let tx = dx - ux * into;
+      let ty = dy - uy * into;
+      let t = Math.hypot(tx, ty);
+      if (t < step * 1e-3) {
+        // Dead on. Which way round is decided by id parity rather than the
+        // rng, so blocking stays deterministic without eating the seeded
+        // stream every frame.
+        const side = (u.id + hit.id) % 2 === 0 ? 1 : -1;
+        tx = -uy * side;
+        ty = ux * side;
+        t = 1;
+      }
+      dx = (tx / t) * step;
+      dy = (ty / t) * step;
+    }
+    return null;
+  }
+
+  /**
+   * The body a step of (dx, dy) would take `u` into. A step that opens up a
+   * gap it already lacked is never blocked, so two units left overlapping can
+   * always walk apart.
+   */
+  private blockerOf(u: Unit, dx: number, dy: number): Unit | null {
+    const x = u.pos.x + dx;
+    const y = clamp(u.pos.y + dy, -LANE_HALF_WIDTH, LANE_HALF_WIDTH);
+    const r = bodyRadius(u.kind);
+    let worst: Unit | null = null;
+    let worstGap = 0;
+    for (const o of this.units.values()) {
+      if (o === u || !o.alive) continue;
+      const min = r + bodyRadius(o.kind);
+      const after = Math.hypot(x - o.pos.x, y - o.pos.y);
+      if (after >= min || after >= dist(u.pos, o.pos)) continue;
+      const gap = min - after;
+      if (gap > worstGap) {
+        worst = o;
+        worstGap = gap;
+      }
+    }
+    return worst;
+  }
+
+  /** Whether `u` could not stand at `p` for a body there (only `only`, if given). */
+  private occupied(u: Unit, p: Vec2, only?: Unit): boolean {
+    const r = bodyRadius(u.kind);
+    for (const o of only ? [only] : this.units.values()) {
+      if (o === u || !o.alive) continue;
+      if (dist(p, o.pos) < r + bodyRadius(o.kind)) return true;
+    }
+    return false;
   }
 
   private turnToward(u: Unit, angle: number, dt: number) {
@@ -492,11 +560,10 @@ export class World {
   }
 
   /**
-   * Keep units from stacking on one pixel. Cheap, not a real pathfinder.
-   *
-   * The split is by mass rather than evenly: a hero shouldered by a lane creep
-   * should barely move and the creep should go around, which an even split got
-   * backwards by sliding both aside equally.
+   * Pull apart bodies that start out overlapping. Movement never creates an
+   * overlap — {@link slide} stops a unit short — so this only sees waves
+   * spawned in a clump. Split evenly, since neither unit walked into the other;
+   * a tower never moves.
    */
   private separate() {
     const list = this.aliveUnits();
@@ -504,36 +571,20 @@ export class World {
       for (let j = i + 1; j < list.length; j++) {
         const a = list[i];
         const b = list[j];
-        if (a.moveSpeed <= 0 && b.moveSpeed <= 0) continue;
-        const min = a.radius + b.radius;
+        const aMoves = a.moveSpeed > 0;
+        const bMoves = b.moveSpeed > 0;
+        if (!aMoves && !bMoves) continue;
+        const min = bodyRadius(a.kind) + bodyRadius(b.kind);
         const dx = b.pos.x - a.pos.x;
         const dy = b.pos.y - a.pos.y;
         const d = Math.hypot(dx, dy);
         if (d >= min || d === 0) continue;
-        const nx = dx / d;
-        const ny = dy / d;
-        // Each unit gives way in proportion to the *other's* mass, so the
-        // heavier one barely moves. Immobile units never move at all.
-        const ma = pushMass(a);
-        const mb = pushMass(b);
-        const aShare = !Number.isFinite(ma) ? 0 : !Number.isFinite(mb) ? 1 : mb / (ma + mb);
         const push = min - d;
-
-        // Tangential slide. A purely head-on shove lets one unit stall another
-        // indefinitely — the two just grind along the lane locked together —
-        // because nothing ever steps around. Dota's creeps path around what is
-        // in the way, so the contact also nudges them past each other. Which
-        // way is decided by id parity rather than the rng, so that separation
-        // stays deterministic without eating the seeded stream every frame.
-        const side = (a.id + b.id) % 2 === 0 ? 1 : -1;
-        const slide = push * SLIDE * side;
-        const tx = -ny * slide;
-        const ty = nx * slide;
-
-        a.pos.x -= (nx * push + tx) * aShare;
-        a.pos.y -= (ny * push + ty) * aShare;
-        b.pos.x += (nx * push + tx) * (1 - aShare);
-        b.pos.y += (ny * push + ty) * (1 - aShare);
+        const aShare = !aMoves ? 0 : !bMoves ? 1 : 0.5;
+        a.pos.x -= (dx / d) * push * aShare;
+        a.pos.y -= (dy / d) * push * aShare;
+        b.pos.x += (dx / d) * push * (1 - aShare);
+        b.pos.y += (dy / d) * push * (1 - aShare);
         a.pos.y = clamp(a.pos.y, -LANE_HALF_WIDTH, LANE_HALF_WIDTH);
         b.pos.y = clamp(b.pos.y, -LANE_HALF_WIDTH, LANE_HALF_WIDTH);
       }

@@ -79,6 +79,29 @@ export const HULL = {
 } as const;
 
 /**
+ * How close two bodies may stand, per kind. A deliberate departure from
+ * {@link HULL}, which still sets attack range.
+ *
+ * The hulls are right for Valve's models, not for the ones drawn here: a KayKit
+ * melee creep's torso alone is about 16 units across its middle, so at hull
+ * contact two creeps stand shield inside shield, and a ranged creep's hull of
+ * 8 lets a whole wave fold into one silhouette. These follow the drawn bodies
+ * instead, keeping the hero a head wider than a creep as the hulls do.
+ */
+const BODY_RADIUS: Record<UnitKind, number> = {
+  melee_creep: 26,
+  ranged_creep: 24,
+  siege_creep: 34,
+  hero: 34,
+  tower: HULL.tower,
+};
+
+/** Collision radius for bodies of `kind` meeting each other. */
+export function bodyRadius(kind: UnitKind): number {
+  return BODY_RADIUS[kind];
+}
+
+/**
  * Turn rate is expressed in radians per 0.03 s, so angular speed is
  * `turnRate / 0.03` rad/s and a 180 degree turn takes `0.03 * PI / turnRate`
  * seconds — about 0.157 s at the common hero turn rate of 0.6.
