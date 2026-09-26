@@ -201,10 +201,6 @@ kbd {
   color: var(--muted);
 }
 
-.hints .active {
-  color: var(--accent);
-}
-
 .dead-overlay {
   position: absolute;
   inset: 0;

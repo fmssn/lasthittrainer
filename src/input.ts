@@ -33,17 +33,6 @@ export class Input {
     this.world = world;
   }
 
-  /**
-   * Whether pressing A right now would land on a unit. Drives the HUD hint, so
-   * a creep crossing the deny line reads as denyable before the key is pressed.
-   */
-  isAttackReady(): boolean {
-    const world = this.world;
-    if (!world || !world.player.alive || world.finished) return false;
-    const target = this.renderer.pickUnit(this.lastScreen, world, world.player);
-    return target !== null && world.canTarget(world.player, target);
-  }
-
   private screen(e: MouseEvent) {
     const rect = this.canvas.getBoundingClientRect();
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
@@ -88,7 +77,7 @@ export class Input {
 
   private onWheel(e: WheelEvent) {
     e.preventDefault();
-    this.renderer.zoom(e.deltaY > 0 ? -0.1 : 0.1);
+    this.renderer.zoom(wheelNotches(e));
   }
 
   private onKeyDown(e: KeyboardEvent) {
@@ -124,4 +113,24 @@ export class Input {
       world.orderStop(world.player);
     }
   }
+}
+
+/**
+ * A wheel event as mouse-wheel notches, positive for zooming out.
+ *
+ * Counting events instead, as this used to, is right for a mouse and wrong for
+ * a trackpad: a two-finger swipe or a pinch arrives as dozens of small events,
+ * and each of them zoomed a full notch, so one gesture ran the whole range. A
+ * notch is 100 px in Chromium and 3 lines in Firefox's line mode. One event
+ * never counts for more than a notch, so an accelerated wheel cannot jump the
+ * range in a single tick either.
+ */
+export function wheelNotches(e: WheelEvent): number {
+  const notches =
+    e.deltaMode === WheelEvent.DOM_DELTA_LINE
+      ? e.deltaY / 3
+      : e.deltaMode === WheelEvent.DOM_DELTA_PAGE
+        ? e.deltaY
+        : e.deltaY / 100;
+  return Math.max(-1, Math.min(1, notches));
 }

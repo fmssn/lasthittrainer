@@ -2,6 +2,7 @@ import { World } from './sim/world.ts';
 import { DEFAULT_CONFIG } from './sim/config.ts';
 import { Renderer3D } from './render3d/renderer3d.ts';
 import { loadUnitAssets } from './render3d/unitView.ts';
+import { wheelNotches } from './input.ts';
 
 /**
  * 3D debug page.
@@ -37,7 +38,7 @@ function start(renderer: Renderer3D) {
       renderer.toggleOrbit(orbit);
     }
   });
-  addEventListener('wheel', (e) => renderer.zoom(e.deltaY > 0 ? -0.1 : 0.1), { passive: true });
+  addEventListener('wheel', (e) => renderer.zoom(wheelNotches(e)), { passive: true });
 
   let last = performance.now();
   let accumulator = 0;

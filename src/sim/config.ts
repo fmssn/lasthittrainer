@@ -18,11 +18,6 @@ export interface DrillConfig {
   /** Layer 4: right-clicking the enemy hero pulls creep aggro onto you. */
   aggroEnabled: boolean;
 
-  /** Training aids. */
-  showKillableHighlight: boolean;
-  showRangeRings: boolean;
-  showDamagePreview: boolean;
-
   seed: number;
 }
 
@@ -35,9 +30,6 @@ export const DEFAULT_CONFIG: DrillConfig = {
   enemyHeroId: 'swordmaster',
   enemyDifficulty: 3,
   aggroEnabled: true,
-  showKillableHighlight: true,
-  showRangeRings: true,
-  showDamagePreview: true,
   seed: Date.now() & 0xffff,
 };
 
