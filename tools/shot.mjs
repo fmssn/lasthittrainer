@@ -9,6 +9,7 @@
  * to the renderer can be looked at rather than reasoned about.
  */
 import { chromium } from 'playwright';
+import { chromiumPath } from './chromium.mjs';
 
 const label = process.argv[2] ?? 'shot';
 /** Seconds of drill to run before the lane shot, so a wave has formed. */
@@ -17,9 +18,7 @@ const dir = process.env.SHOTS ?? 'shots';
 const url = process.env.URL ?? 'http://localhost:5173/';
 
 const browser = await chromium.launch({
-  // The container ships Chromium at a revision this playwright build does not
-  // expect, so point at it directly rather than downloading a second copy.
-  executablePath: process.env.CHROMIUM ?? '/opt/pw-browsers/chromium',
+  executablePath: chromiumPath(),
   // SwiftShader: there is no GPU here, and WebGL has to come from somewhere.
   args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'],
 });
@@ -40,6 +39,7 @@ await page.screenshot({ path: `${dir}/${label}-menu.png` });
 await page.evaluate(() => {
   window.__lht.start({
     heroId: 'shadow_fiend',
+    items: [],
     duration: 600,
     deniesEnabled: true,
     enemyHero: true,

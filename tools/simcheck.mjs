@@ -14,11 +14,12 @@
  * scripts/npc/heroes/*.txt, worked through Dota's published attribute rules.
  */
 import { chromium } from 'playwright';
+import { chromiumPath } from './chromium.mjs';
 
 const url = process.env.URL ?? 'http://localhost:5173/';
 
 const browser = await chromium.launch({
-  executablePath: process.env.CHROMIUM ?? '/opt/pw-browsers/chromium',
+  executablePath: chromiumPath(),
   args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'],
 });
 const page = await browser.newPage();
