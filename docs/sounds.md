@@ -19,6 +19,7 @@ and a coin clink on a last hit, and that is what a player's ear is trained on.
 | `deny` | You deny one of your creeps | 1 | 0.4 s |
 | `sword_swing` | Swordmaster's windup starts | 2 | 0.3 s |
 | `sword_hit` | Swordmaster's blow lands | 3 | 0.4 s |
+| `bow_draw` | Frost Archer's windup starts | 2 | 0.45 s |
 | `bow_release` | Frost Archer's arrow leaves | 2 | 0.4 s |
 | `frost_arrow_hit` | The arrow lands | 2 | 0.4 s |
 | `melee_creep_hit` | A melee creep's swing lands | 3 | 0.3 s |
@@ -41,11 +42,18 @@ and a coin clink on a last hit, and that is what a player's ear is trained on.
 | `run_end` | The results screen opens | 1 | 2 s |
 
 "Length" is what the file should be after trimming, not what to generate (see
-below). Name variations `melee_creep_hit_1.ogg`, `_2`, `_3`.
+below). Name variations `melee_creep_hit_1.wav`, `_2`, `_3`.
 
-`sword_swing` is the one sound that starts at the *beginning* of an attack
-rather than at its end. Dota has it too (the `PreAttack` sound many melee
-heroes carry), and it is how you hear that you started a swing too early.
+`sword_swing` and `bow_draw` are the two sounds that start at the *beginning*
+of an attack rather than at its end. Dota has them too (the `PreAttack` sound
+many heroes carry), and it is how you hear that you started a swing too early.
+`bow_draw` is cut to end at its loudest moment, full draw, so it hands straight
+over to `bow_release` at the Frost Archer's 0.5 s attack point. Without it the
+bow had no build-up at all, which read as wrong next to the sword.
+
+The files in `public/audio/` were picked by ear from 32 takes each. Which take
+of which prompt each one is, and the model settings, are in
+`tools/audio/keepers.json`, so any of them can be rendered again.
 
 **Deliberately left out:**
 - **Voice lines**, such as hero responses to orders and "denied!" taunts.
@@ -61,13 +69,20 @@ Researched 2026-09-26, for generating on an H100. Use **Stable Audio 3
 Medium**, natively supported in ComfyUI since v0.22.0 (its templates are under
 Audio in the template browser).
 
-- **Use the Medium Base template** (`stable_audio_3_medium_base.safetensors`),
-  not Medium. The plain Medium template runs your text through Qwen to
+- **Use `stable_audio_3_medium.safetensors`, not Medium Base.** Base is the
+  checkpoint before post-training and follows a one-shot prompt badly: the
+  first full batch was made with it, and a single coin came back as a dozen
+  clicks, a single knock as four, a sword hit as a second of noisy smear, while
+  the same checkpoint made passable music. Medium gives one clean transient.
+  Small-SFX was tried as well and has soft onsets, which blurs a timing cue.
+- **Skip the templates.** Both SA3 templates can run your text through Qwen to
   "expand" it, which is the opposite of what a tightly written one-shot prompt
-  wants.
+  wants, and the Base template's category picker fails validation on ComfyUI
+  0.37. `tools/audio/generate.py` builds the plain graph instead: checkpoint,
+  T5Gemma text encoder, KSampler, decode, save.
 - It needs `t5gemma_b_b_ul2.safetensors` in `models/text_encoders/`. The
-  checkpoint goes in `models/checkpoints/`. The weights are gated on Hugging
-  Face: accept the licence on the model page first.
+  checkpoint goes in `models/checkpoints/`. Comfy-Org's repackaged weights
+  (`Comfy-Org/stable-audio-3` on Hugging Face) are not gated.
 - **Licence:** Stability AI Community License. You own what it generates, and
   commercial use is free below $1M annual revenue after registering. That
   covers a public GitHub Pages build.
@@ -77,8 +92,8 @@ Medium is also the biggest option, because nothing larger is worth running:
 
 - **SA3 Large** scores best in Stability's paper (FAD 0.358 against Medium's
   0.369, lower is better), but its weights are not released.
-- **Small-SFX** is not needed on an H100. It scores lower (0.395) and exists
-  to run on a CPU.
+- **Small-SFX** is not needed on an H100. It scores lower (0.395), exists to
+  run on a CPU, and its onsets came out soft.
 - **HunyuanVideo-Foley XXL** is bigger (48 kHz, 20 GB), but it is built to
   score a video, not to follow a text prompt alone. Its licence also does not
   apply in the EU, the UK or South Korea.
@@ -94,9 +109,10 @@ model to try them on.
 
 ### Settings
 
-- **Steps 8, CFG 1.0, sampler `pingpong`.** SA3 is distilled, so its guidance
-  is baked in, and more steps or higher CFG do not help. Medium takes well
-  under a second per clip here.
+- **Steps 8, CFG 1.0, sampler `lcm`, scheduler `simple`**, as ComfyUI's own
+  Medium template sets them. Medium is distilled, so its guidance is baked in,
+  and more steps or higher CFG do not help. (`pingpong` is not a sampler
+  ComfyUI 0.37 offers.) The whole set of 20 × 32 takes renders in about 30 s.
 - **CFG 1 means a negative prompt does nothing.** Put everything you do *not*
   want into the positive prompt as what you do want: "dry, close-miked",
   never "no reverb" in a negative box.
@@ -109,8 +125,12 @@ model to try them on.
   That costs well under a minute per prompt here, and seeds are a better use
   of the GPU than rewording: different seeds of one prompt match each other
   in tone, which is what variations should do.
-- Write down the seed of every keeper next to the file, so it can be
-  re-rendered later.
+- Write down the seed of every keeper in `tools/audio/keepers.json`, so it
+  can be re-rendered later. A batch renders from one seed (1000), so a take is
+  named by its batch index.
+- **Rank before you listen.** `tools/audio/process.py` scores every take on
+  shape (one onset, attack time, a tail that ends near its slot, no clipping),
+  cleans the best four as described below, and leaves the choosing to the ear.
 
 ### Second opinion: Stable Audio Open 1.0
 
@@ -148,10 +168,12 @@ Copy each block as is.
 
 ### Must have
 
-**`last_hit_gold`**. The one sound that must always cut through, so keep it
-bright and high.
+**`last_hit_gold`**. The one sound that must always cut through. The first
+prompt asked for "bright", "sparkle" and a "fantasy game reward", and every
+take sounded artificial and too high; real coins in a hand sound right and
+still cut through.
 ```
-TrackType: SFX, two small gold coins clinking together once, bright metallic ring, short sparkle tail, fantasy game reward sound, dry close-miked studio recording, single isolated one-shot, sharp attack
+TrackType: SFX, a few heavy gold coins dropped into an open palm, natural metallic clink with a warm low-mid body, real coins, dry close-miked studio recording, single isolated one-shot, sharp attack
 ```
 
 **`deny`**. Dota's deny is understated, so keep it low and dry, clearly
@@ -170,9 +192,16 @@ TrackType: SFX, a heavy two-handed sword swung fast through the air, short airy 
 TrackType: SFX, a heavy steel sword striking a bony armored target, sharp metallic chop with a crunchy low thud, short and punchy, dry close-miked studio recording, single isolated one-shot, sharp attack
 ```
 
-**`bow_release`**
+**`bow_draw`**. Generated 2 s long; the draw peaks around 0.9 s, and the cut
+keeps the 0.45 s that end there.
 ```
-TrackType: SFX, a wooden longbow string released, taut twang and a quick arrow whoosh, with a faint high icy shimmer, dry close-miked studio recording, single isolated one-shot, sharp attack
+TrackType: SFX, a wooden longbow drawn back, creaking wood and a tightening bowstring, rising tension, stopping at full draw with no release, dry close-miked studio recording, single isolated one-shot
+```
+
+**`bow_release`**. The first prompt's thin twang with an icy shimmer had
+nothing under it.
+```
+TrackType: SFX, a heavy longbow string released, deep thrumming twang with a sharp snap and an arrow whooshing away, full-bodied, dry close-miked studio recording, single isolated one-shot, sharp attack
 ```
 
 **`frost_arrow_hit`**

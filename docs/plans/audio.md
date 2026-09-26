@@ -1,9 +1,8 @@
 # Plan: lane audio
 
-Working plan for wiring the sounds in `docs/sounds.md` into the drill. It is
-blocked until the files exist: the user generates them by hand in ComfyUI and
-drops them in `public/audio/`. One commit per phase. Remove this file in the
-last phase once CLAUDE.md covers it.
+Working plan for wiring the sounds in `docs/sounds.md` into the drill. The
+files are in `public/audio/`, one take per sound, picked by ear. One commit per
+phase. Remove this file in the last phase once CLAUDE.md covers it.
 
 ## Decisions
 
@@ -52,12 +51,16 @@ hero is swinging.
 | `last_hit_gold`, `deny`, `creep_death` | lethal `DamageEvent`, as above |
 | `hero_death` | lethal `DamageEvent` whose target is a hero |
 | `bow_release`, `ranged_creep_cast`, `siege_launch`, `tower_attack` | a projectile id in `world.projectiles` not seen last frame, with the source looked up by `sourceId` |
-| `sword_swing` | a hero's `phase` going from `idle` to `windup` since last frame |
+| `sword_swing`, `bow_draw` | a hero's `phase` going from `idle` to `windup` since last frame |
 | `horn`, `run_end`, `ui_click`, `lane_ambience` | `main.ts` state changes and DOM clicks |
 
-`sword_swing` is stopped if the windup ends without a hit, such as a move or stop
-order mid-windup. A swish for a swing that never landed would teach the wrong
-rhythm.
+`sword_swing` and `bow_draw` are stopped if the windup ends without a hit or a
+release, such as a move or stop order mid-windup. A swish for a swing that
+never landed would teach the wrong rhythm. `bow_draw` is 0.45 s long and peaks
+at its end, full draw, so it starts that far into the file that its end lands
+on the release: an offset of 0.45 s minus the effective attack point, never
+below zero. Attack speed shortens the windup, and the draw still peaks on the
+release instead of being cut off before it.
 
 The siege creep's attack has to be checked while wiring it up: if its boulder
 is a sim projectile it goes through the projectile row, and otherwise through
