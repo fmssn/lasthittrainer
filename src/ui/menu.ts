@@ -153,7 +153,7 @@ export class Menu {
                 <span class="layer-num">2</span><span>Denies</span>
                 <input type="checkbox" data-toggle="deniesEnabled" ${c.deniesEnabled ? 'checked' : ''} />
               </div>
-              <p>A-click your own creeps at or under 50% HP. The deny line is drawn on every health bar.</p>
+              <p>A-click your own creeps at or under 50% HP.</p>
             </label>
 
             <label class="layer ${c.enemyHero ? 'on' : ''}">

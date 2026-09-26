@@ -190,8 +190,8 @@ exist.
 
 The drawing splits in two: ground-plane art (range rings, tower zones, the
 killable pulse) is real geometry, while anything that must stay screen-sized and
-legible mid-swing (health bars, the deny line, the damage preview, the windup
-arc, floaters) is drawn by `annotations.ts` on a 2D canvas over the stage.
+legible mid-swing (health bars, the damage preview, the windup arc, floaters)
+is drawn by `annotations.ts` on a 2D canvas over the stage.
 Sim→three mapping is fixed in `scene.ts`: sim `(x, y)` → three `(x, 0, y)`, +Y up.
 
 `#game` is the pointer surface: it stays transparent and the stage canvases are
