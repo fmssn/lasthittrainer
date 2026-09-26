@@ -1,6 +1,10 @@
+import type { ItemId } from './items.ts';
+
 /** Everything the menu can change about a drill. */
 export interface DrillConfig {
   heroId: string;
+  /** Your starting items. The bot always starts empty-handed. */
+  items: ItemId[];
   /** Drill length in seconds. */
   duration: number;
 
@@ -24,6 +28,7 @@ export interface DrillConfig {
 
 export const DEFAULT_CONFIG: DrillConfig = {
   heroId: 'shadow_fiend',
+  items: [],
   duration: 180,
   deniesEnabled: true,
   enemyHero: true,

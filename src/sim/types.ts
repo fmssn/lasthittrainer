@@ -36,6 +36,8 @@ export interface Unit {
   /** 0 for instant (melee) attacks. */
   projectileSpeed: number;
   attackSpeedBonus: number;
+  /** Extra attack damage against enemy creeps (Quelling Blade's Quell). */
+  creepDamageBonus: number;
 
   /** Gold the killer receives. Creeps roll within a range at spawn. */
   bounty: number;

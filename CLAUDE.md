@@ -70,6 +70,7 @@ src/sim/          Headless game simulation
   units.ts        Creep/tower stat templates, spawnUnit, damage rolls
   heroes.ts       Hero base stats + attributes; level-1 stats are derived, not
                   hand-copied. Ordered by attack-timing difficulty.
+  items.ts        Starting items from items.txt, 600 gold / 6 slot rules
   math.ts         Vec helpers, angles, seeded RNG (makeRng)
   world.ts        World.step() — the fixed-timestep core. Spawns waves, resolves
                   windup/backswing, projectiles, damage, bounty, stats.
@@ -109,14 +110,20 @@ tools/blender/    Headless Blender script that generates public/models/melee_cre
 - `constants.ts` is a **reference sheet of real Dota values**, not a tuning file.
   Training knobs belong in `config.ts`. If a value is a deliberate simplification,
   say so in a comment next to it — the existing comments follow that convention.
-- Unit and hero numbers come from Valve's own `npc_units.txt` and
-  `scripts/npc/heroes/*.txt`. **Do not adjust them by feel.** If one looks wrong,
+- Unit, hero and item numbers come from Valve's own `npc_units.txt`,
+  `scripts/npc/heroes/*.txt` and `items.txt`. **Do not adjust them by feel.** If one looks wrong,
   check it against the scripts and change it with the source named in the
   comment. `npm run check` asserts the whole table, so a drive-by tweak fails.
 - Hero level-1 stats are *derived* from base stats plus attributes (22 HP and
   0.1 regen per strength, 0.167 armor and 1 attack speed per agility, +1 damage
   per point of primary). Add a hero by writing its `HeroSource`, not by
-  computing a stat block by hand.
+  computing a stat block by hand. Copy `BaseAttackSpeed` too when the hero file
+  overrides the base 100 — Juggernaut's 110 went missing once and made his
+  swing 0.018s slow.
+- Starting items feed `derive()` as attributes, so they get the same rules.
+  Quell is the one item effect outside that: `Unit.creepDamageBonus`, added in
+  `World.applyModifiers` before armor, enemy creeps only. Only the player gets
+  items; the bot starts empty-handed.
 - Attack speed divides the wind-up and the backswing as well as the interval.
   Anything that quotes a hero's timing to the player must quote the effective
   number, not the one authored in the hero file.
@@ -198,8 +205,9 @@ state should go in the renderer.
 
 - `vite build` only picks up `index.html`; `slice3d.html` is dev-only until it is
   added as a rollup input.
-- There is no XP, no levels, no items and no abilities: heroes are permanently
-  level 1 and creeps permanently at their 0:00 stats. Deliberate — this is a
+- There is no XP, no levels, no items beyond an optional starting buy, and no
+  abilities: heroes are permanently level 1 and creeps permanently at their
+  0:00 stats. Faerie Fire's heal is not modelled, only its +2 damage. Deliberate — this is a
   last-hit drill, not a laning simulator.
 - No fog of war, no day/night, no runes, no neutral camps, no high ground and so
   no uphill miss chance.

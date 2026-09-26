@@ -1,5 +1,6 @@
 import type { DrillConfig } from './sim/config.ts';
 import type { Stats } from './sim/world.ts';
+import type { ItemId } from './sim/items.ts';
 
 const KEY = 'lht.runs.v1';
 const MAX_RUNS = 200;
@@ -7,6 +8,8 @@ const MAX_RUNS = 200;
 export interface RunRecord {
   at: number;
   heroId: string;
+  /** Absent on runs recorded before starting items existed, which had none. */
+  items?: ItemId[];
   duration: number;
   enemyHero: boolean;
   enemyDifficulty: number;
@@ -30,6 +33,7 @@ export function buildRecord(config: DrillConfig, stats: Stats): RunRecord {
   return {
     at: Date.now(),
     heroId: config.heroId,
+    items: [...config.items],
     duration: config.duration,
     enemyHero: config.enemyHero,
     enemyDifficulty: config.enemyDifficulty,
@@ -69,12 +73,22 @@ export function saveRun(run: RunRecord): RunRecord[] {
   return trimmed;
 }
 
-/** Best previous run under comparable settings, for the "new best" callout. */
+/** Order-free identity of a loadout: two branches then a blade is a blade and two branches. */
+function loadoutKey(items: readonly ItemId[] | undefined): string {
+  return [...(items ?? [])].sort().join(',');
+}
+
+/**
+ * Best previous run under comparable settings, for the "new best" callout. A
+ * Quelling Blade changes which hits kill, so a run with one is not a baseline
+ * for a run without.
+ */
 export function personalBest(runs: RunRecord[], run: RunRecord): RunRecord | null {
   const comparable = runs.filter(
     (r) =>
       r !== run &&
       r.heroId === run.heroId &&
+      loadoutKey(r.items) === loadoutKey(run.items) &&
       r.duration === run.duration &&
       r.enemyHero === run.enemyHero &&
       r.enemyDifficulty === run.enemyDifficulty,

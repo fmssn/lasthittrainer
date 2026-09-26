@@ -93,12 +93,14 @@ const results = await page.evaluate(async () => {
   check('SF interval', constants.attackInterval(sf.baseAttackTime, sf.attackSpeedBonus), 1.28, 0.001);
   check('SF windup', constants.attackPointTime(sf.attackPoint, sf.attackSpeedBonus), 0.4, 0.001);
 
-  // Juggernaut: 22-24 + 32 agi, authored 0.33 point but 0.25 in the lane.
+  // Juggernaut: 22-24 + 32 agi. `BaseAttackSpeed 110` in his hero file, so
+  // 142 attack speed at level 1 and an authored 0.33 point is 0.232 in lane.
   const jug = heroes.heroById('juggernaut');
   check('Jug damage', `${jug.damageMin}-${jug.damageMax}`, '54-56');
   check('Jug hp', jug.maxHp, 560);
-  check('Jug windup', constants.attackPointTime(jug.attackPoint, jug.attackSpeedBonus), 0.25, 0.001);
-  check('Jug interval', constants.attackInterval(jug.baseAttackTime, jug.attackSpeedBonus), 1.0606, 0.001);
+  check('Jug attack speed', jug.attackSpeedBonus, 42);
+  check('Jug windup', constants.attackPointTime(jug.attackPoint, jug.attackSpeedBonus), 0.2324, 0.001);
+  check('Jug interval', constants.attackInterval(jug.baseAttackTime, jug.attackSpeedBonus), 0.9859, 0.001);
 
   const sniper = heroes.heroById('sniper');
   check('Sniper damage', `${sniper.damageMin}-${sniper.damageMax}`, '40-46');
@@ -114,6 +116,59 @@ const results = await page.evaluate(async () => {
 
   const drow = heroes.heroById('drow');
   check('Drow damage', `${drow.damageMin}-${drow.damageMax}`, '51-58');
+  // Nobody else overrides BaseAttackSpeed, so agility is all of it.
+  check('Drow attack speed', drow.attackSpeedBonus, 24);
+
+  // --- Starting items, from items.txt -------------------------------------
+  const items = await import('/src/sim/items.ts');
+  {
+    // Two branches are +2 agility on Jug: +2 damage, +2 attack speed, +0.334
+    // armor, +44 HP. Quell adds nothing to the listed damage — it is creep-only.
+    const j = heroes.heroById('juggernaut', ['quelling_blade', 'iron_branch', 'iron_branch']);
+    check('Jug+QB+2IB damage', `${j.damageMin}-${j.damageMax}`, '56-58');
+    check('Jug+QB+2IB attack speed', j.attackSpeedBonus, 44);
+    check('Jug+QB+2IB hp', j.maxHp, 604);
+    check('Jug+QB+2IB armor', j.armor, jug.armor + 0.334, 0.001);
+    check('Jug quell (melee)', j.creepDamageBonus, 8);
+    check('SF quell (ranged)', heroes.heroById('shadow_fiend', ['quelling_blade']).creepDamageBonus, 4);
+    // Slippers are damage on an agility hero, a Mantle is not; the reverse on CM.
+    check('SF+slippers damage', heroes.heroById('shadow_fiend', ['slippers']).damageMin, 44);
+    check('SF+mantle damage', heroes.heroById('shadow_fiend', ['mantle']).damageMin, 41);
+    check('CM+mantle damage', heroes.heroById('crystal_maiden', ['mantle']).damageMin, 51);
+    check('CM+circlet hp', heroes.heroById('crystal_maiden', ['circlet']).maxHp, 538);
+    check('faerie fire damage', heroes.heroById('sniper', ['faerie_fire']).damageMin, 42);
+    // Level 1 stats are untouched by asking for a hero with nothing bought.
+    check('no items is the base template', heroes.heroById('juggernaut', []), jug);
+
+    // What a shop at 0:00 would let you buy: one blade, six slots, 600 gold.
+    check('one quelling blade', items.legalLoadout(['quelling_blade', 'quelling_blade']).length, 1);
+    check('six slots', items.legalLoadout(Array(8).fill('iron_branch')).length, 6);
+    check('600 gold', items.legalLoadout(['circlet', 'circlet', 'circlet', 'circlet']).length, 3);
+    check('unknown items dropped', items.legalLoadout(['rapier', 'iron_branch']).join(), 'iron_branch');
+    check('garbage loadout', items.legalLoadout('rapier').length, 0);
+  }
+  {
+    // Quell lands on enemy creeps, before armor, and nowhere else.
+    const w = new World({
+      ...DEFAULT_CONFIG,
+      heroId: 'juggernaut',
+      items: ['quelling_blade'],
+      enemyHeroId: 'juggernaut',
+      seed: 7,
+    });
+    const hero = w.player;
+    const avg = (hero.damageMin + hero.damageMax) / 2;
+    const enemyMelee = [...w.units.values()].find((u) => u.team === 'dire' && u.kind === 'melee_creep');
+    const ownMelee = [...w.units.values()].find((u) => u.team === 'radiant' && u.kind === 'melee_creep');
+    check('quell vs enemy creep', w.expectedDamage(hero, enemyMelee), (avg + 8) * constants.armorMultiplier(2), 1e-6);
+    check('no quell on a deny', w.expectedDamage(hero, ownMelee), avg * constants.armorMultiplier(2), 1e-6);
+    check('no quell vs hero', w.expectedDamage(hero, w.enemy), avg * constants.armorMultiplier(w.enemy.armor), 1e-6);
+    check('bot starts empty-handed', w.enemy.creepDamageBonus, 0);
+    // A config saved by an older build has no items at all.
+    const legacy = { ...DEFAULT_CONFIG, heroId: 'juggernaut', seed: 7 };
+    delete legacy.items;
+    check('config without items', new World(legacy).player.damageMin, 54);
+  }
 
   // --- Melee creeps hit heroes for 25% less -------------------------------
   {
@@ -164,8 +219,8 @@ const results = await page.evaluate(async () => {
     const { w, hero, creep } = rig('juggernaut');
     w.orderAttack(hero, creep);
     const first = timeToDamage(w, creep);
-    // Tight on purpose: at a 1/120 step a 0.25s attack point is exactly 30
-    // frames, so anything but an exact landing means a frame is being lost.
+    // Tight on purpose: at a 1/120 step a 0.232s attack point runs out inside
+    // frame 28, so a landing any later than that means a frame is being lost.
     check('melee hit lands on attack point', first, constants.attackPointTime(hero.attackPoint, hero.attackSpeedBonus), 0.002);
     // And the next one lands one attack interval later, not one interval plus
     // a backswing — the follow-through never gates the next swing.

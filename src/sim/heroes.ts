@@ -8,6 +8,7 @@ import {
   PER_STRENGTH_HP,
   PER_STRENGTH_HP_REGEN,
 } from './constants.ts';
+import { itemById, type ItemId } from './items.ts';
 
 export type Attribute = 'str' | 'agi' | 'int';
 
@@ -37,6 +38,12 @@ interface HeroSource {
 
   attackRange: number;
   baseAttackTime: number;
+  /**
+   * `BaseAttackSpeed`, before agility is added. Omitted when the hero keeps the
+   * 100 from `npc_dota_hero_base.txt`; Juggernaut's 110 is the one exception
+   * in this roster.
+   */
+  baseAttackSpeed?: number;
   attackPoint: number;
   /** Not in the scripts — Dota reads it off the attack animation. Measured. */
   attackBackswing: number;
@@ -52,8 +59,15 @@ interface HeroSource {
 
 export interface HeroTemplate extends UnitTemplate {
   id: string;
-  /** Always present on a hero: it is agility. Optional only on creep templates. */
+  /**
+   * Attack speed above the 100 baseline: agility plus whatever the hero file
+   * adds to `BaseAttackSpeed`. Optional only on creep templates.
+   */
   attackSpeedBonus: number;
+  /** Quell from a Quelling Blade, or 0. Enemy creeps only. */
+  creepDamageBonus: number;
+  /** The starting items these stats include. */
+  items: readonly ItemId[];
   /** How hard the attack animation is to time, 1 (forgiving) to 5 (brutal). */
   difficulty: 1 | 2 | 3 | 4 | 5;
   /** What this hero teaches. */
@@ -72,13 +86,33 @@ export interface HeroTemplate extends UnitTemplate {
  *
  * The attack speed matters more than it looks. It divides both the attack
  * interval and the wind-up, so Juggernaut's authored 0.33 s attack point is
- * really 0.25 s in the lane at 32 agility. Treating every hero as if it had no
- * attack speed — which is what a flat `attackSpeedBonus` of 0 does — makes
- * every swing in the drill slower than the same swing in game, which is the
- * one error a last-hit trainer cannot afford.
+ * really 0.23 s in the lane: 110 base attack speed plus 32 agility. Treating
+ * every hero as if it had no attack speed — which is what a flat
+ * `attackSpeedBonus` of 0 does — makes every swing in the drill slower than
+ * the same swing in game, which is the one error a last-hit trainer cannot
+ * afford.
+ *
+ * Starting items go in as attributes, before any of that, so a Slippers of
+ * Agility speeds the swing up and a Mantle on an intelligence hero is damage.
  */
-function derive(h: HeroSource): HeroTemplate {
-  const primaryValue = h.primary === 'str' ? h.str : h.primary === 'agi' ? h.agi : h.int;
+function derive(h: HeroSource, items: readonly ItemId[] = []): HeroTemplate {
+  let str = h.str;
+  let agi = h.agi;
+  let int = h.int;
+  let flatDamage = 0;
+  let quell = 0;
+  const melee = h.projectileSpeed <= 0;
+  for (const id of items) {
+    const it = itemById(id);
+    if (!it) continue;
+    str += it.str;
+    agi += it.agi;
+    int += it.int;
+    flatDamage += it.damage;
+    // Quell does not stack, so the largest one wins rather than the sum.
+    quell = Math.max(quell, melee ? it.quellMelee : it.quellRanged);
+  }
+  const primaryValue = h.primary === 'str' ? str : h.primary === 'agi' ? agi : int;
   return {
     kind: 'hero',
     id: h.id,
@@ -87,17 +121,19 @@ function derive(h: HeroSource): HeroTemplate {
     note: h.note,
     color: h.color,
     primary: h.primary,
-    str: h.str,
-    agi: h.agi,
-    int: h.int,
+    str,
+    agi,
+    int,
+    items: [...items],
 
     radius: HULL.hero,
-    maxHp: HERO_BASE_HP + h.str * PER_STRENGTH_HP,
-    hpRegen: (h.baseHpRegen ?? HERO_BASE_HP_REGEN) + h.str * PER_STRENGTH_HP_REGEN,
-    armor: h.baseArmor + h.agi * PER_AGILITY_ARMOR,
-    damageMin: h.baseDamageMin + primaryValue,
-    damageMax: h.baseDamageMax + primaryValue,
-    attackSpeedBonus: h.agi * PER_AGILITY_ATTACK_SPEED,
+    maxHp: HERO_BASE_HP + str * PER_STRENGTH_HP,
+    hpRegen: (h.baseHpRegen ?? HERO_BASE_HP_REGEN) + str * PER_STRENGTH_HP_REGEN,
+    armor: h.baseArmor + agi * PER_AGILITY_ARMOR,
+    damageMin: h.baseDamageMin + primaryValue + flatDamage,
+    damageMax: h.baseDamageMax + primaryValue + flatDamage,
+    attackSpeedBonus: (h.baseAttackSpeed ?? 100) - 100 + agi * PER_AGILITY_ATTACK_SPEED,
+    creepDamageBonus: quell,
 
     attackRange: h.attackRange,
     baseAttackTime: h.baseAttackTime,
@@ -140,7 +176,7 @@ const SOURCES: HeroSource[] = [
     id: 'juggernaut',
     name: 'Juggernaut',
     difficulty: 2,
-    note: 'Standard melee timing, and 32 agility makes it the fastest swing here after Sniper. You have to walk into 150 range, so position matters as much as the click.',
+    note: 'Standard melee timing, but 110 base attack speed plus 32 agility makes it the fastest swing here after Sniper. You have to walk into 150 range, so position matters as much as the click.',
     color: '#6fc3a8',
     baseDamageMin: 22,
     baseDamageMax: 24,
@@ -148,6 +184,7 @@ const SOURCES: HeroSource[] = [
     baseHpRegen: 0.5,
     attackRange: 150,
     baseAttackTime: 1.4,
+    baseAttackSpeed: 110,
     attackPoint: 0.33,
     attackBackswing: 0.64,
     projectileSpeed: 0,
@@ -245,8 +282,11 @@ const SOURCES: HeroSource[] = [
   },
 ];
 
-export const HEROES: HeroTemplate[] = SOURCES.map(derive);
+/** Every hero as it spawns with nothing bought. */
+export const HEROES: HeroTemplate[] = SOURCES.map((s) => derive(s));
 
-export function heroById(id: string): HeroTemplate {
-  return HEROES.find((h) => h.id === id) ?? HEROES[0];
+/** A hero's level 1 stats, carrying `items` if any are given. */
+export function heroById(id: string, items: readonly ItemId[] = []): HeroTemplate {
+  const source = SOURCES.find((s) => s.id === id) ?? SOURCES[0];
+  return items.length ? derive(source, items) : (HEROES.find((h) => h.id === source.id) ?? HEROES[0]);
 }
