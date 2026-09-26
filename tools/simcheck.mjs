@@ -437,6 +437,53 @@ const results = await page.evaluate(async () => {
     check('a hero is bodyblocked by a line of creeps', hero.pos.x < 2200, true);
   }
 
+  // Stride reversals: steps that point back against the one before. A creep
+  // walking round something turns gradually and never reverses, so a count
+  // in the hundreds is one shuddering in place.
+  const reversals = (w, seconds, only) => {
+    const last = new Map();
+    let n = 0;
+    for (let i = 0; i < seconds * 120; i++) {
+      w.step(STEP);
+      for (const u of w.units.values()) {
+        if (!u.alive || u.kind === 'hero' || u.kind === 'tower' || (only && u !== only)) continue;
+        const p = last.get(u.id);
+        const m = p ? { x: u.pos.x - p.x, y: u.pos.y - p.y } : null;
+        const moved = m && Math.hypot(m.x, m.y) > 1e-6;
+        if (moved && p.m && m.x * p.m.x + m.y * p.m.y < 0) n++;
+        last.set(u.id, { x: u.pos.x, y: u.pos.y, m: moved ? m : p?.m });
+      }
+    }
+    return n;
+  };
+
+  {
+    // A creep whose straight way in is walled off by two friends shoulder to
+    // shoulder. Sliding off one into the other used to leave a step pointing
+    // straight back, taken at full stride and undone the next frame, over
+    // and over, and the creep never got there.
+    const w = new World({ ...DEFAULT_CONFIG, seed: 31, enemyHero: false, duration: 1e9 });
+    w.units.clear();
+    const put = (team, x, y, still) => {
+      const u = units.spawnUnit(units.MELEE_CREEP, team, { x, y }, w.rng);
+      if (still) u.moveSpeed = 0;
+      w.units.set(u.id, u);
+      return u;
+    };
+    const foe = put('dire', 3000, 0, true);
+    put('radiant', 2904, 0, true);
+    put('radiant', 2904, 52, true);
+    const late = put('radiant', 2800, 20, false);
+    check('a creep behind its wave does not shudder', reversals(w, 1.5, late), 0);
+    check('it walks round its wave into range', w.inAttackRange(late, foe), true);
+  }
+
+  {
+    const w = new World({ ...DEFAULT_CONFIG, seed: 99, duration: 1e9 });
+    // Hundreds to thousands a minute before the fix.
+    check('creeps in a busy lane do not shudder', reversals(w, 60) < 20, true);
+  }
+
   {
     // Separation invariant: nothing should end a busy lane inside anything else.
     const w = new World({ ...DEFAULT_CONFIG, seed: 44, duration: 1e9 });
