@@ -31,7 +31,7 @@ const app = document.getElementById('app') as HTMLDivElement;
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const overlay = document.getElementById('overlay') as HTMLDivElement;
 
-// Both are built by boot(), once the creep rig is in memory — there is nothing
+// Both are built by boot(), once the unit models are in memory — there is nothing
 // to draw with until then. #game is the pointer surface: the stage canvases go
 // underneath it and it stays transparent on top, so input never changes hands.
 let renderer: Renderer3D;
@@ -56,7 +56,7 @@ const results = new Results(
 /**
  * Bring up the renderer, then the menu.
  *
- * The creep rig has to be in memory before anything can be drawn, and there is
+ * The unit models have to be in memory before anything can be drawn, and there is
  * no second renderer to fall back to any more, so a failure here is fatal and
  * says so on screen rather than leaving a black canvas and a dead Start button.
  */

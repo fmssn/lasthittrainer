@@ -63,9 +63,6 @@ export const AGGRO_COOLDOWN = 3;
  */
 export const MELEE_CREEP_HERO_DAMAGE_PENALTY = 0.25;
 
-/** Units of lane between the two spawn points. */
-export const LANE_LENGTH = 6000;
-
 /** Half-width of the walkable lane corridor. */
 export const LANE_HALF_WIDTH = 420;
 
@@ -119,11 +116,6 @@ export const HERO_BASE_HP_REGEN = 0.25;
  */
 export function armorMultiplier(armor: number): number {
   return 1 - (0.06 * armor) / (1 + 0.06 * Math.abs(armor));
-}
-
-/** Effective HP against physical damage, i.e. how much raw damage it takes to kill. */
-export function effectiveHp(hp: number, armor: number): number {
-  return hp / armorMultiplier(armor);
 }
 
 /** Time between attack starts. */

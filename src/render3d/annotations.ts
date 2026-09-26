@@ -304,11 +304,9 @@ export class Annotations {
       // none of them, and neither does this: what is worth reading is your own
       // damage, what is landing on you, and gold.
       if (f.kind === 'creep_damage') continue;
-      // The sim drifts floaters along -y, which reads as "up" on a 2D canvas
-      // but as "sideways across the lane" here. Undo that drift and spend it on
-      // world height instead, so the text climbs off the unit's head in 3D.
-      const drift = f.rise * f.age;
-      const s = this.project({ x: f.pos.x, y: f.pos.y + drift }, 150 + drift);
+      // Climbs in world height, not across the lane, so the text rises off
+      // the unit's head.
+      const s = this.project(f.pos, 150 + f.rise * f.age);
       if (this.behind()) continue;
       const big = f.kind === 'gold' || f.kind === 'deny';
       this.ctx.globalAlpha = clamp(1 - f.age / f.life, 0, 1);

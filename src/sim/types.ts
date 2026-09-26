@@ -46,8 +46,6 @@ export interface Unit {
   alive: boolean;
 
   // --- runtime state ---
-  /** Explicit order target; null means the unit is auto-acquiring. */
-  orderTargetId: number | null;
   /** Unit currently being swung at. */
   attackTargetId: number | null;
   /** Point the unit is walking to when it has no attack target. */
@@ -66,9 +64,6 @@ export interface Unit {
   aggroTimer: number;
   /** Heroes only: seconds until this unit's next aggro check is allowed. */
   aggroCooldown: number;
-
-  /** Set once a projectile is inbound that will finish this unit, for AI bookkeeping. */
-  incomingDamage: number;
 }
 
 export interface Projectile {
@@ -97,6 +92,7 @@ export interface FloatingText {
   kind: FloaterKind;
   age: number;
   life: number;
+  /** How fast the renderer lifts it off the unit, sim units per second. */
   rise: number;
 }
 
@@ -119,7 +115,7 @@ export interface DamageEvent {
   lethal: boolean;
 }
 
-export type KillCredit = 'player' | 'enemy_hero' | 'creep' | 'none';
+export type KillCredit = 'player' | 'enemy_hero' | 'creep';
 
 export interface KillEvent {
   victimTeam: Team;

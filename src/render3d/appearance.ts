@@ -11,17 +11,11 @@ import { MODEL_HEIGHT } from './unitView.ts';
  * which is what produced health bars floating a body-length above their owner.
  */
 
-/** Per-team base colour for the creep rig. */
+/** Per-team colour a hero model's `Team` material takes. */
 export const TEAM_TINT: Record<Team, number> = { radiant: 0x4e8f5f, dire: 0xa8564f };
 
-/** Kind nudges the base colour so ranged/siege still read apart at a glance. */
-export const KIND_SHIFT: Record<UnitKind, number> = {
-  melee_creep: 1,
-  ranged_creep: 0.78,
-  siege_creep: 0.62,
-  hero: 1.35,
-  tower: 1,
-};
+/** Heroes wear the team colour a shade brighter than the base. */
+export const HERO_TINT_SHIFT = 1.35;
 
 /** Rig scale per kind. A siege creep is a head taller than a melee one. */
 export const KIND_SCALE: Record<UnitKind, number> = {

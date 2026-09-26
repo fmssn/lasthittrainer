@@ -4,14 +4,7 @@ import type { World } from '../sim/world.ts';
 import { Scene3D } from './scene.ts';
 import { UnitView, type UnitAssets } from './unitView.ts';
 import { HEROES } from '../sim/heroes.ts';
-import {
-  KIND_SCALE,
-  KIND_SHIFT,
-  TEAM_TINT,
-  TOWER_VISUAL_RADIUS,
-  pickRadius,
-  rigHeight,
-} from './appearance.ts';
+import { HERO_TINT_SHIFT, KIND_SCALE, TEAM_TINT, TOWER_VISUAL_RADIUS, pickRadius, rigHeight } from './appearance.ts';
 import { Annotations } from './annotations.ts';
 import { ProjectileLayer } from './projectileView.ts';
 import { Effects } from './effects.ts';
@@ -101,10 +94,8 @@ interface Rec {
   ghost: number;
 }
 
-function tintFor(unit: Unit): number {
-  const base = new THREE.Color(TEAM_TINT[unit.team]);
-  const k = KIND_SHIFT[unit.kind] ?? 1;
-  return base.multiplyScalar(k).getHex();
+function heroTint(unit: Unit): number {
+  return new THREE.Color(TEAM_TINT[unit.team]).multiplyScalar(HERO_TINT_SHIFT).getHex();
 }
 
 export class Renderer3D {
@@ -140,7 +131,7 @@ export class Renderer3D {
   ) {
     this.canvas = document.createElement('canvas');
     this.canvas.className = 'stage3d';
-    // Under the 2D canvas, which stays on top as the pointer surface.
+    // Under #game, which stays on top as the pointer surface.
     container.insertBefore(this.canvas, before);
 
     this.stage = new Scene3D(this.canvas);
@@ -214,8 +205,24 @@ export class Renderer3D {
       }
     }
     // Nothing under the cursor still means the lane point may sit on a unit's
-    // feet — a click just short of a rig should grab it, as in the 2D view.
-    return best ?? world.unitAt(this.toWorld(screen), forUnit);
+    // feet — a click just short of a rig should grab it.
+    return best ?? this.unitAtFeet(this.toWorld(screen), world, forUnit);
+  }
+
+  /** Nearest unit whose hull, with a little slack, covers a lane point. */
+  private unitAtFeet(point: Vec2, world: World, forUnit: Unit): Unit | null {
+    let best: Unit | null = null;
+    let bestD = Infinity;
+    for (const u of world.units.values()) {
+      if (!u.alive || u.id === forUnit.id) continue;
+      const d = Math.hypot(point.x - u.pos.x, point.y - u.pos.y);
+      if (d > u.radius + 16) continue;
+      if (d < bestD) {
+        bestD = d;
+        best = u;
+      }
+    }
+    return best;
   }
 
   /** Zoom by mouse-wheel notches, positive out. */
@@ -289,31 +296,32 @@ export class Renderer3D {
 
   /**
    * The catapult is authored directly in sim units and has no skeleton, so it
-   * takes neither the shared rig nor its per-kind scale. Melee and ranged
-   * creeps are KayKit skeletons in their team's colours; heroes have models of
-   * their own.
+   * takes no per-kind scale. Melee and ranged creeps are KayKit skeletons in
+   * their team's colours; heroes have models of their own. Towers never get
+   * here: {@link syncUnit} builds them.
    */
   private makeView(unit: Unit): UnitLike {
-    if (unit.kind === 'siege_creep') return new SiegeView(unit);
     const kind = unit.kind;
-    const asset =
-      kind === 'melee_creep' || kind === 'ranged_creep'
-        ? this.assets.creeps[kind][unit.team]
-        : kind === 'hero'
-          ? this.heroAsset(unit)
-          : this.assets.box;
-    const view = new UnitView(unit, asset, tintFor(unit));
-    view.root.scale.multiplyScalar(KIND_SCALE[unit.kind] ?? 1);
+    if (kind === 'siege_creep') return new SiegeView(unit);
+    if (kind === 'tower') throw new Error('towers are drawn by towerMesh, not a unit view');
+    const view =
+      kind === 'hero'
+        ? new UnitView(this.heroAsset(unit), heroTint(unit))
+        : new UnitView(this.assets.creeps[kind][unit.team]);
+    view.root.scale.multiplyScalar(KIND_SCALE[kind] ?? 1);
     return view;
   }
 
   /**
    * A unit carries its hero's display name but not its id, and the sim has no
-   * reason to grow a render-only field, so the id is looked up by name.
+   * reason to grow a render-only field, so the id is looked up by name. Every
+   * hero's model is loaded before the renderer exists, so a miss is a bug.
    */
   private heroAsset(unit: Unit) {
     const id = HEROES.find((h) => h.name === unit.name)?.id;
-    return (id && this.assets.heroes[id]) || this.assets.box;
+    const asset = id ? this.assets.heroes[id] : undefined;
+    if (!asset) throw new Error(`no model loaded for hero "${unit.name}"`);
+    return asset;
   }
 
   /** Units the sim has forgotten: hold the corpse long enough to read the fall. */

@@ -7,9 +7,9 @@ import { wheelNotches } from './input.ts';
 /**
  * 3D debug page.
  *
- * The stage itself now ships inside the game (menu → Renderer → 3D); what is
- * left here is the instrumentation: an unattended sim, a clip histogram and a
- * free-look camera, which is how you check that all four clips actually fire.
+ * The same stage the game draws with, plus instrumentation: an unattended sim,
+ * a clip histogram and a free-look camera, which is how you check that all
+ * four clips actually fire.
  *
  * Open http://localhost:5173/slice3d.html
  */
@@ -26,7 +26,7 @@ const world = new World({ ...DEFAULT_CONFIG, duration: 99999 });
 loadUnitAssets((path) => `/${path}`)
   .then((assets) => start(new Renderer3D(app, info, assets)))
   .catch((err) => {
-    info.textContent = `Failed to load creep: ${err.message}`;
+    info.textContent = `Failed to load the unit models: ${err.message}`;
     console.error(err);
   });
 

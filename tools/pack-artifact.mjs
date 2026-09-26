@@ -50,14 +50,11 @@ const js = escapeClose(readFileSync(join('dist/assets', scripts[0]), 'utf8'), 's
 const css = escapeClose(readFileSync(join('dist/assets', styles[0]), 'utf8'), 'style');
 // Every GLB under public/models, keyed by its path under public/ as main.ts
 // asks for it.
-const glbs = [
-  'models/melee_creep.glb',
-  ...['units', 'heroes'].flatMap((dir) =>
-    readdirSync(`public/models/${dir}`)
-      .filter((f) => f.endsWith('.glb'))
-      .map((f) => `models/${dir}/${f}`),
-  ),
-];
+const glbs = ['units', 'heroes'].flatMap((dir) =>
+  readdirSync(`public/models/${dir}`)
+    .filter((f) => f.endsWith('.glb'))
+    .map((f) => `models/${dir}/${f}`),
+);
 const models = Object.fromEntries(
   glbs.map((p) => [p, `data:model/gltf-binary;base64,${readFileSync(join('public', p)).toString('base64')}`]),
 );
