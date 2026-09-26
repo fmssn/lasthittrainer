@@ -974,7 +974,11 @@ await page.evaluate(() => {
     items: [],
   });
 });
-await page.waitForTimeout(2500);
+// Two seconds on the lane's clock, not the wall's. Under SwiftShader on a slow
+// runner a frame can take the best part of a second, and a frame advances the
+// sim by at most 0.25 s, so 2.5 s of waiting was once too little time for the
+// first melee swing, 0.7 s into the lane, to land.
+await page.waitForFunction(() => (window.__lht.world?.time ?? 0) >= 2, null, { timeout: 60000 });
 
 // And a real drill does make them: the seeded lane starts in combat.
 const drillPlays = await page.evaluate(() => window.__lht.audioStats());
