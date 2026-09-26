@@ -38,7 +38,7 @@ phase 6 once the CLAUDE.md sections cover it.
   Skeletons also ship `Assets/gltf/Skeleton_{Blade,Axe,Staff,Crossbow,Shield_*}.gltf`.
 - Clips used: `Idle`, `Walking_A` (or `Walking_D_Skeletons`), `Death_A`, and
   the attack clips above; creeps use `1H_Melee_Attack_Chop` (melee),
-  `Spellcast_Shoot` (ranged) and `2H_Melee_Attack_Chop` (siege).
+  `Spellcast_Shoot` (ranged) and `Throw` (siege — see phase 3).
 
 ## Scouting facts (measured in Blender 5.2.2, 2026-09-26)
 
@@ -124,8 +124,10 @@ reachable) and clones both packs at pinned SHAs into a git-ignored
 
 ### 3. Creeps
 melee: Skeleton_Warrior + blade. ranged: Skeleton_Mage + staff. siege:
-Skeleton_Warrior at 1.25x with axe and large shield. Remove `weapons.ts`
-and the colour tint.
+Skeleton_Warrior at 1.25x with the `Throw` clip and a large shield on the off
+hand. The first draft said axe + two-handed chop, but the sim's siege creep is
+ranged (`projectileSpeed` 1100, range 690), so a melee swing would play while a
+projectile flies. Remove `weapons.ts` and the colour tint.
 
 ### 4. Heroes
 Per the table above. The enemy bot uses the same model as its hero, in
