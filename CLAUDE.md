@@ -70,18 +70,20 @@ looked at rather than argued about. A visual change that is not screenshotted
 is not reviewed.
 
 `npm run balance` (`tools/balance.mjs`) drives *both* heroes with the same
-laning AI and holds your side at level 3, so the only thing changing down the
-table is the opponent. It is a measurement, not a pass/fail, and it catches the
-one class of bug nothing else here can: a side bias. A lane where Radiant
-quietly farms better than Dire would flatter you for three minutes and teach
-you nothing, and staring at the code does not find it. Current reading, with
-the Frost Archer on both sides — level 3 against level 3 comes out 5.3 to
-10.3 last hits, gap 5.0, and the ladder runs 1.7 -> 5.0 -> 10.3 -> 12.7 ->
-15.0. That gap is open, not accepted: three seeds exaggerate it, but over
-twelve it is still 5.3 to 7.5 (Swordmaster mirror 4.1 to 5.5) with Dire ahead
-in most seeds, so the lane leans Dire. Before the roster was cut the harness
-mirrored a hero no longer in it, which read 0.0 on the same seeds. Re-run it
-after touching creep AI, the bot, or anything in the combat path.
+laning AI and holds your side at bot profile 3, so the only thing changing
+down the table is the opponent. It is a measurement, not a pass/fail, and it
+catches the one class of bug nothing else here can: a side bias. A lane where
+Radiant quietly farms better than Dire would flatter you for three minutes and
+teach you nothing, and staring at the code does not find it. Current reading,
+with the Frost Archer on both sides and heroes levelling — profile 3 against
+profile 3 comes out 6.0 to 10.3 last hits, gap 4.3, and the ladder runs 4.3 ->
+4.0 -> 10.3 -> 11.3 -> 15.3. Three seeds swing that gap either way: over twelve
+the mirror is 8.1 to 8.7 and over another 24 it is 7.9 to 8.1, with the ladder
+monotonic in both (2.6 -> 4.5 -> 8.1 -> 11.7 -> 15.3 over the 24). The lane
+used to lean Dire by 1.3 to 1.9 on the same seed sets; that went away when
+creeps stopped taking whatever was already in attack range, though the exact
+mechanism was not pinned down. Re-run it after touching creep AI, the bot, or
+anything in the combat path.
 
 To preview in-session, use `preview_start` with the launch config named
 `lasthittrainer` (`.claude/launch.json`); do not start the dev server via Bash.
@@ -101,13 +103,15 @@ src/sim/          Headless game simulation
   config.ts       DrillConfig (what the menu can change) + enemy bot profiles 1-5
   types.ts        Unit, Vec2, Projectile, KillEvent, DamageEvent — the data model
   units.ts        Creep/tower stat templates, spawnUnit, damage rolls
-  heroes.ts       Hero base stats + attributes; level-1 stats are derived, not
-                  hand-copied. Two heroes, ordered by attack-timing difficulty.
+  heroes.ts       Hero base stats, attributes and per-level gains; stats at every
+                  level are derived, not hand-copied. Two heroes, ordered by
+                  attack-timing difficulty.
   items.ts        Starting items from items.txt, 600 gold / 6 slot / stacking
                   rules
   math.ts         Vec helpers, angles, seeded RNG (makeRng)
   world.ts        World.step() — the fixed-timestep core. Spawns waves, resolves
-                  windup/backswing, projectiles, damage, bounty, stats.
+                  windup/backswing, projectiles, damage, bounty, experience,
+                  levels, stats.
   ai/creepAi.ts   Creep targeting in Dota's own priority order
   ai/enemyHeroAi.ts  The bot laner, driven by an EnemyProfile
 
@@ -123,7 +127,8 @@ src/render3d/     The renderer: three.js stage + screen-space overlay
   effects.ts      Pooled impact sprites, driven by World.damageLog
   projectileView.ts  Oriented bolts with trails; flat travel, no arc
   renderer3d.ts   Renderer3D: scene + views + ground rings, and unit picking
-  annotations.ts  Screen-space layer: health bars, aggro timer, floaters
+  annotations.ts  Screen-space layer: health bars (heroes with their level plate),
+                  aggro timer, floaters
 src/ui/           menu.ts, hud.ts, results.ts — plain DOM over the canvas
   inventory.ts    The six item slots, shared by the menu, HUD and results
   itemIcons.ts    Item icons as SVG, in the style of the WC3 buttons
@@ -148,12 +153,26 @@ tools/blender/    build_units.py builds the KayKit creeps in public/models/units
   `scripts/npc/heroes/*.txt` and `items.txt`. **Do not adjust them by feel.** If one looks wrong,
   check it against the scripts and change it with the source named in the
   comment. `npm run check` asserts the whole table, so a drive-by tweak fails.
-- Hero level-1 stats are *derived* from base stats plus attributes (22 HP and
-  0.1 regen per strength, 0.167 armor and 1 attack speed per agility, +1 damage
-  per point of primary). Add a hero by writing its `HeroSource`, not by
-  computing a stat block by hand. Copy `BaseAttackSpeed` too when the hero file
-  overrides the base 100 — the Swordmaster's 110 went missing once and made
-  its swing 0.018s slow.
+- Hero stats are *derived* from base stats plus attributes, at every level (22
+  HP and 0.1 regen per strength, exactly 1/6 armor and 1 attack speed per
+  agility, +1 damage per point of primary; each level past the first adds the
+  hero file's `Attribute*Gain`, unrounded). Add a hero by writing its
+  `HeroSource`, gains included, not by computing a stat block by hand. Copy
+  `BaseAttackSpeed` too when the hero file overrides the base 100 — the
+  Swordmaster's 110 went missing once and made its swing 0.018s slow.
+- Heroes level, the bot included. A death pays its `bountyXp` (a hero: 100 +
+  13% of its experience) to the living enemy heroes within 1500, split and
+  truncated, whoever landed the blow; a denied creep pays the enemy half and
+  the denier nothing. A level-up rebuilds the hero's stats from its
+  `HeroSource` and items (`World.loadouts`), keeps the health fraction, and the
+  level sets the respawn time. The table, range and factors are not in the
+  scripts, so each cites the patch note that set it in `constants.ts`.
+- Attack classes come from Valve's creep passives (`creep_irresolute`,
+  `creep_piercing`, `creep_siege` in `npc_abilities.txt`), composed in
+  `ATTACK_CLASS` and applied in `World.applyModifiers` after Quell and armor:
+  melee creeps deal 75% to heroes, ranged creeps 50% to heroes and 150% to
+  creeps, and siege creeps and towers take 50% from heroes. The bot's estimate
+  goes through the same function, so it can never disagree with the hit.
 - Starting items feed `derive()` as attributes, so they get the same rules.
   Quell is the one item effect outside that: `Unit.creepDamageBonus`, added in
   `World.applyModifiers` before armor, enemy creeps only. Only the player gets
@@ -176,14 +195,33 @@ tools/blender/    build_units.py builds the KayKit creeps in public/models/units
   asserting the landing to within 2ms.
 - Creeps are **sticky**. One that is standing and swinging does not re-check
   which enemy is nearest; it holds its target until that dies or leaves attack
-  range, then prefers whatever is already in range over chasing. A swing already
-  under way is never re-aimed, because the release reads `attackTargetId` at
-  release time and would otherwise hand the damage to the new target.
+  range. Then it picks from everything in acquisition range by unit type
+  (heroes and creeps are one tier, per Valve's glossary), then threat (hitting
+  it, hitting its allies, idle, hitting its own side), then distance. Being in
+  attack range already earns nothing: ranking that first is what had creeps
+  turning on an idle hero beside a fighting wave. With nothing in range it
+  keeps chasing what it had, however far: there is no leash, and no fog to
+  lose a target in. A swing already under way is never re-aimed, because the
+  release reads `attackTargetId` at release time and would otherwise hand the
+  damage to the new target.
+- Aggro reaches `AGGRO_RADIUS` (500) from the hero, for every creep kind and
+  for towers. An attack *order* on an enemy hero pulls (a forced 2.3 s chase)
+  and starts the hero's 3 s cooldown whether or not anything came. Every swing
+  at a hero that reaches its wind-up, auto-attacks included, draws nearby
+  creeps again while the cooldown is ready, with no chase and no cooldown of
+  its own. An attack order on your own unit hands aggro back only while the
+  cooldown is ready, and starts it: whatever was hitting you picks again with
+  you ranked last (`Unit.shunnedId`) until it settles. A tower lets go only for
+  a nearer unit of yours, on its own 2.5 s cooldown. Before 5:00 a lane creep
+  with no enemy creep in acquisition range and more than 1550 from its own
+  tier 1 ignores all of it (7.27).
 - Nothing shoves anything. A unit walking into another slides round it or
   stops against it, and the one standing there never moves: that is what
   makes bodyblocking possible. Bodies meet at `bodyRadius(kind)`, which
   follows the drawn rigs and is wider than Valve's hulls; `Unit.radius` stays
-  the hull, because attack range is measured to it.
+  the hull, because attack range is measured from it: the authored range plus
+  both hulls, edge to edge. A tower's 700 reaches a hero 868 from its centre,
+  and a melee creep's 100 is 140.
 
 ### Performance
 
@@ -278,15 +316,19 @@ state should go in the renderer.
 
 - `vite build` only picks up `index.html`; `slice3d.html` is dev-only until it is
   added as a rollup input.
-- There is no XP, no levels, no items beyond an optional starting buy, and no
-  abilities: heroes are permanently level 1 and creeps permanently at their
-  0:00 stats. Faerie Fire's heal is not modelled, only its +2 damage, and
-  Tango and Magic Stick do nothing at all. Deliberate — this is a
-  last-hit drill, not a laning simulator.
+- There are no abilities, so no skill points, talents or innates, and no items
+  beyond an optional starting buy; creeps stay at their 0:00 stats. The innates
+  matter: in game both heroes gain agility from one (the Frost Archer's
+  Precision Aura from level 1, the Swordmaster's Bladeform while untouched), so
+  their damage here is a little under the real thing. Faerie Fire's heal is not
+  modelled, only its +2 damage, and Tango and Magic Stick do nothing at all.
+  Deliberate — this is a last-hit drill, not a laning simulator.
 - No fog of war, no day/night, no runes, no neutral camps, no high ground and so
   no uphill miss chance.
-- Creep waves are 3 melee + 1 ranged, siege every 5th. Flagbearer creeps, which
-  modern waves carry, are not modelled.
+- Creep waves are 3 melee + 1 ranged, with a siege creep every 10th wave from
+  5:00 as in Dota. No drill length reaches 5:00, so none ever enters a drill,
+  and the early-aggro block covers every drill from start to finish. Flagbearer
+  creeps, which modern waves carry, are not modelled.
 - Towers are invulnerable, so creeps that reach one cannot trade with it. In
   practice the lane oscillates around the middle and never parks a wave on a
   tower; a five-minute headless run holds the frontline between 2320 and 3115

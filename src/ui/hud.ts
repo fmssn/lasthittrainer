@@ -1,6 +1,9 @@
 import { World } from '../sim/world.ts';
 import { heroById } from '../sim/heroes.ts';
 import { legalLoadout } from '../sim/items.ts';
+import { DIFFICULTY_NAMES } from '../sim/config.ts';
+import { LEVEL_XP } from '../sim/constants.ts';
+import { clamp } from '../sim/math.ts';
 import { inventoryHtml } from './inventory.ts';
 
 function fmtTime(s: number): string {
@@ -19,6 +22,10 @@ export class Hud {
     this.el.innerHTML = `
       <div class="hud-top">
         <div class="hud-panel hud-left">
+          <div class="stat stat-level">
+            <span class="stat-value" data-level>1</span><span class="stat-label">level</span>
+            <span class="xp-bar"><i data-xp></i></span>
+          </div>
           <div class="stat stat-lh"><span class="stat-value" data-lh>0</span><span class="stat-label">last hits</span></div>
           <div class="stat stat-dn"><span class="stat-value" data-dn>0</span><span class="stat-label">denies</span></div>
           <div class="stat stat-sub"><span class="stat-value" data-gold>0</span><span class="stat-label">gold</span></div>
@@ -30,7 +37,7 @@ export class Hud {
         </div>
         <div class="hud-panel hud-right" data-enemy-panel>
           <div class="enemy-name" data-enemy-name></div>
-          <div class="enemy-line"><span data-elh>0</span> LH · <span data-edn>0</span> DN</div>
+          <div class="enemy-line">level <span data-elevel>1</span> · <span data-elh>0</span> LH · <span data-edn>0</span> DN</div>
         </div>
       </div>
       <div class="hud-bottom">
@@ -69,6 +76,14 @@ export class Hud {
       // What the player spawned with, which is what World itself equipped.
       this.q('data-inventory').innerHTML = inventoryHtml(legalLoadout(world.config.items));
     }
+    const me = world.player;
+    this.q('data-level').textContent = String(me.level);
+    // Progress through the current level, the way Dota's portrait ring fills.
+    const from = LEVEL_XP[me.level - 1];
+    const to = LEVEL_XP[me.level];
+    const filled = to === undefined ? 1 : clamp((me.experience - from) / (to - from), 0, 1);
+    this.q('data-xp').style.width = `${(filled * 100).toFixed(1)}%`;
+
     this.q('data-lh').textContent = String(s.lastHits);
     this.q('data-dn').textContent = String(s.denies);
     this.q('data-gold').textContent = String(s.gold);
@@ -82,7 +97,8 @@ export class Hud {
     const panel = this.q('data-enemy-panel');
     if (world.enemy) {
       panel.hidden = false;
-      this.q('data-enemy-name').textContent = `${heroById(world.config.enemyHeroId).name} · lvl ${world.config.enemyDifficulty}`;
+      this.q('data-enemy-name').textContent = `${heroById(world.config.enemyHeroId).name} · ${DIFFICULTY_NAMES[world.config.enemyDifficulty]}`;
+      this.q('data-elevel').textContent = String(world.enemy.level);
       this.q('data-elh').textContent = String(s.enemyLastHits);
       this.q('data-edn').textContent = String(s.enemyDenies);
     } else {

@@ -25,7 +25,7 @@ export interface UnitTemplate {
   turnRate: number;
   bountyMin: number;
   bountyMax: number;
-  xp: number;
+  bountyXp: number;
   /** Heroes carry attack speed from agility; creeps and towers have none. */
   attackSpeedBonus?: number;
   /** Only heroes carrying a Quelling Blade have this. */
@@ -60,7 +60,7 @@ export const MELEE_CREEP: UnitTemplate = {
   turnRate: 0.5,
   bountyMin: 34,
   bountyMax: 39,
-  xp: 57,
+  bountyXp: 57,
 };
 
 export const RANGED_CREEP: UnitTemplate = {
@@ -83,7 +83,7 @@ export const RANGED_CREEP: UnitTemplate = {
   turnRate: 0.5,
   bountyMin: 43,
   bountyMax: 52,
-  xp: 69,
+  bountyXp: 69,
 };
 
 export const SIEGE_CREEP: UnitTemplate = {
@@ -104,7 +104,7 @@ export const SIEGE_CREEP: UnitTemplate = {
   turnRate: 0.5,
   bountyMin: 59,
   bountyMax: 72,
-  xp: 88,
+  bountyXp: 88,
 };
 
 /**
@@ -130,7 +130,7 @@ export const TOWER: UnitTemplate = {
   turnRate: 100,
   bountyMin: 0,
   bountyMax: 0,
-  xp: 0,
+  bountyXp: 0,
 };
 
 export function rollDamage(unit: Unit, rng: () => number): number {
@@ -162,7 +162,9 @@ export function spawnUnit(tpl: UnitTemplate, team: Team, pos: Vec2, rng: () => n
     attackSpeedBonus: tpl.attackSpeedBonus ?? 0,
     creepDamageBonus: tpl.creepDamageBonus ?? 0,
     bounty: Math.round(tpl.bountyMin + rng() * (tpl.bountyMax - tpl.bountyMin)),
-    xp: tpl.xp,
+    bountyXp: tpl.bountyXp,
+    level: 1,
+    experience: 0,
     alive: true,
     attackTargetId: null,
     moveTarget: null,
@@ -173,5 +175,6 @@ export function spawnUnit(tpl: UnitTemplate, team: Team, pos: Vec2, rng: () => n
     aggroTargetId: null,
     aggroTimer: 0,
     aggroCooldown: 0,
+    shunnedId: null,
   };
 }

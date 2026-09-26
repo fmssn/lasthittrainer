@@ -60,6 +60,7 @@ export class Results {
           }
           ${card('Gold', String(stats.gold), `${Math.round((stats.gold / config.duration) * 60)} GPM from creeps`)}
           ${card('Last hits / min', perMin.toFixed(1), benchmark(perMin))}
+          ${card('Level', String(stats.level), `${stats.experience} experience`)}
           ${config.enemyHero ? card('Enemy hero', `${stats.enemyLastHits} LH`, `${stats.enemyDenies} denies against you`) : ''}
           ${stats.deaths > 0 ? card('Deaths', String(stats.deaths), 'stop standing in the wave') : ''}
         </div>

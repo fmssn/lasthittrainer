@@ -46,6 +46,9 @@ export interface EnemyProfile {
   harass: number;
 }
 
+/** What the menu and HUD call each profile. Not "level": heroes have levels. */
+export const DIFFICULTY_NAMES = ['', 'Sloppy', 'Casual', 'Decent', 'Strong', 'Scripted'];
+
 export const ENEMY_PROFILES: Record<number, EnemyProfile> = {
   1: { reaction: 0.45, estimateError: 0.35, missChance: 0.55, denies: false, harass: 0.0 },
   2: { reaction: 0.3, estimateError: 0.22, missChance: 0.35, denies: false, harass: 0.1 },

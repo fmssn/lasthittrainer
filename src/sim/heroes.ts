@@ -55,6 +55,10 @@ interface HeroSource {
   str: number;
   agi: number;
   int: number;
+  /** `AttributeStrengthGain` and the rest: added per level past the first. */
+  strGain: number;
+  agiGain: number;
+  intGain: number;
 }
 
 export interface HeroTemplate extends UnitTemplate {
@@ -80,9 +84,15 @@ export interface HeroTemplate extends UnitTemplate {
 }
 
 /**
- * Level 1 stats, by Dota's own attribute rules: 22 HP and 0.1 HP regen per
- * strength, 0.167 armor and 1 attack speed per agility, and +1 attack damage
- * per point of the hero's primary attribute.
+ * Stats at a level, by Dota's own attribute rules: 22 HP and 0.1 HP regen per
+ * strength, a sixth of a point of armor and 1 attack speed per agility, and +1
+ * attack damage per point of the hero's primary attribute. Each level past the
+ * first adds the hero file's attribute gains, and that is all a level does for
+ * a hero with no abilities.
+ *
+ * The gains are fractional (2.8 agility a level) and are used unrounded. No
+ * source says Dota floors them before working out the bonuses, and the
+ * difference is under one damage a hit.
  *
  * The attack speed matters more than it looks. It divides both the attack
  * interval and the wind-up, so the Swordmaster's authored 0.33 s attack point
@@ -95,10 +105,10 @@ export interface HeroTemplate extends UnitTemplate {
  * Starting items go in as attributes, before any of that, so a Slippers of
  * Agility speeds the swing up and a Mantle on an intelligence hero is damage.
  */
-function derive(h: HeroSource, items: readonly ItemId[] = []): HeroTemplate {
-  let str = h.str;
-  let agi = h.agi;
-  let int = h.int;
+function derive(h: HeroSource, items: readonly ItemId[] = [], level = 1): HeroTemplate {
+  let str = h.str + h.strGain * (level - 1);
+  let agi = h.agi + h.agiGain * (level - 1);
+  let int = h.int + h.intGain * (level - 1);
   let flatDamage = 0;
   let quell = 0;
   const melee = h.projectileSpeed <= 0;
@@ -145,7 +155,7 @@ function derive(h: HeroSource, items: readonly ItemId[] = []): HeroTemplate {
 
     bountyMin: 0,
     bountyMax: 0,
-    xp: 0,
+    bountyXp: 0,
   };
 }
 
@@ -181,6 +191,9 @@ const SOURCES: HeroSource[] = [
     str: 20,
     agi: 32,
     int: 14,
+    strGain: 2.0,
+    agiGain: 2.8,
+    intGain: 1.4,
   },
   {
     // npc_dota_hero_drow_ranger.txt
@@ -203,6 +216,9 @@ const SOURCES: HeroSource[] = [
     str: 16,
     agi: 24,
     int: 15,
+    strGain: 1.9,
+    agiGain: 2.8,
+    intGain: 1.4,
   },
 ];
 
@@ -216,7 +232,7 @@ const RENAMED: Record<string, string> = {
   drow: 'frost_archer',
 };
 
-/** Every hero as it spawns with nothing bought. */
+/** Every hero as it spawns: level 1, nothing bought. */
 export const HEROES: HeroTemplate[] = SOURCES.map((s) => derive(s));
 
 /** `id` as the current roster knows it, or undefined for a hero that is gone. */
@@ -225,9 +241,10 @@ export function canonicalHeroId(id: string): string | undefined {
   return SOURCES.some((s) => s.id === current) ? current : undefined;
 }
 
-/** A hero's level 1 stats, carrying `items` if any are given. */
-export function heroById(id: string, items: readonly ItemId[] = []): HeroTemplate {
+/** A hero's stats at `level`, carrying `items` if any are given. */
+export function heroById(id: string, items: readonly ItemId[] = [], level = 1): HeroTemplate {
   const canonical = canonicalHeroId(id);
   const source = SOURCES.find((s) => s.id === canonical) ?? SOURCES[0];
-  return items.length ? derive(source, items) : (HEROES.find((h) => h.id === source.id) ?? HEROES[0]);
+  if (items.length || level > 1) return derive(source, items, level);
+  return HEROES.find((h) => h.id === source.id) ?? HEROES[0];
 }

@@ -9,24 +9,33 @@ import type {
   Vec2,
 } from './types.ts';
 import {
+  AGGRO_BLOCK_TOWER_RANGE,
+  AGGRO_BLOCK_UNTIL,
   AGGRO_COOLDOWN,
   AGGRO_DURATION,
+  AGGRO_RADIUS,
   DENY_THRESHOLD,
+  DENY_XP_FACTOR,
   LANE_HALF_WIDTH,
-  MELEE_CREEP_HERO_DAMAGE_PENALTY,
   SIEGE_EVERY_N_WAVES,
+  TOWER_DEAGGRO_COOLDOWN,
   WAVE_INTERVAL,
+  XP_RANGE,
   acquisitionRange,
   armorMultiplier,
   attackBackswingTime,
+  attackClassFactor,
   attackInterval,
   attackPointTime,
   bodyRadius,
+  heroKillXp,
+  levelForXp,
+  respawnTime,
   turnSpeed,
 } from './constants.ts';
 import { MELEE_CREEP, RANGED_CREEP, SIEGE_CREEP, TOWER, resetIds, rollDamage, spawnUnit } from './units.ts';
 import { heroById } from './heroes.ts';
-import { legalLoadout } from './items.ts';
+import { legalLoadout, type ItemId } from './items.ts';
 import { angleDelta, angleTo, clamp, dist, makeRng } from './math.ts';
 import type { DrillConfig } from './config.ts';
 import { ENEMY_PROFILES } from './config.ts';
@@ -36,7 +45,6 @@ import { EnemyHeroAi } from './ai/enemyHeroAi.ts';
 export const RADIANT_SPAWN = 400;
 export const DIRE_SPAWN = 5600;
 export const LANE_CENTER = (RADIANT_SPAWN + DIRE_SPAWN) / 2;
-export const HERO_RESPAWN_TIME = 6;
 
 /**
  * Contacts resolved per step for a unit on the move. Sliding off one body can
@@ -77,6 +85,9 @@ export interface Stats {
   deaths: number;
   /** Swings that landed on a creep that was already dead or full — pure overkill clicks. */
   wastedSwings: number;
+  /** Where your hero ended up. */
+  level: number;
+  experience: number;
 }
 
 export class World {
@@ -110,31 +121,40 @@ export class World {
     gold: 0,
     deaths: 0,
     wastedSwings: 0,
+    level: 1,
+    experience: 0,
   };
 
   private nextProjectileId = 1;
   private nextDamageSeq = 1;
   private enemyAi: EnemyHeroAi | null = null;
+  /** What each hero was built from, so a level-up can build it again. */
+  private readonly loadouts = new Map<number, { heroId: string; items: readonly ItemId[] }>();
+  private readonly towers = new Map<Team, Unit>();
 
   constructor(config: DrillConfig) {
     this.config = config;
     this.rng = makeRng(config.seed);
     resetIds();
 
-    const heroTpl = heroById(config.heroId, legalLoadout(config.items));
+    const items = legalLoadout(config.items);
+    const heroTpl = heroById(config.heroId, items);
     this.player = spawnUnit(heroTpl, 'radiant', { x: LANE_CENTER - 480, y: 0 }, this.rng);
     this.units.set(this.player.id, this.player);
+    this.loadouts.set(this.player.id, { heroId: config.heroId, items });
 
     if (config.enemyHero) {
       const enemyTpl = heroById(config.enemyHeroId);
       this.enemy = spawnUnit(enemyTpl, 'dire', { x: LANE_CENTER + 480, y: 0 }, this.rng);
       this.units.set(this.enemy.id, this.enemy);
+      this.loadouts.set(this.enemy.id, { heroId: config.enemyHeroId, items: [] });
       this.enemyAi = new EnemyHeroAi(this.enemy, ENEMY_PROFILES[config.enemyDifficulty]);
     }
 
     for (const [team, x] of [['radiant', RADIANT_TOWER_X] as const, ['dire', DIRE_TOWER_X] as const]) {
       const tower = spawnUnit(TOWER, team, { x, y: -260 }, this.rng);
       this.units.set(tower.id, tower);
+      this.towers.set(team, tower);
     }
 
     // Seed the lane so the drill starts in combat instead of with a 10 second walk.
@@ -164,23 +184,20 @@ export class World {
 
   /**
    * Everything that sits between a rolled attack and the health bar: Quell,
-   * armor, and `creep_irresolute` (melee lane creeps deal 25% less to heroes).
-   * It lives in one place so the bot's estimate and the actual hit can never
-   * disagree.
+   * armor, and the attack class (a ranged creep deals 0.5x to heroes and 1.5x
+   * to creeps; see {@link attackClassFactor}). It lives in one place so the
+   * bot's estimate and the actual hit can never disagree.
    *
-   * Quell is attack damage, so it goes in before armor. It is enemy creeps
-   * only: the tooltip says "non-hero units", towers are invulnerable here
-   * anyway, and it does not apply to denies.
+   * Quell is attack damage, so it goes in before armor and the attack class
+   * scales it with the rest. It is enemy creeps only: the tooltip says
+   * "non-hero units", towers are invulnerable here anyway, and it does not
+   * apply to denies.
    */
   private applyModifiers(source: Unit, target: Unit, raw: number): number {
     if (source.creepDamageBonus > 0 && target.team !== source.team && isCreep(target)) {
       raw += source.creepDamageBonus;
     }
-    let dmg = raw * armorMultiplier(target.armor);
-    if (source.kind === 'melee_creep' && target.kind === 'hero') {
-      dmg *= 1 - MELEE_CREEP_HERO_DAMAGE_PENALTY;
-    }
-    return dmg;
+    return raw * armorMultiplier(target.armor) * attackClassFactor(source.kind, target.kind);
   }
 
   /** How long until a swing started now would land on `target`. */
@@ -244,8 +261,13 @@ export class World {
     return target.hp <= target.maxHp * DENY_THRESHOLD;
   }
 
+  /**
+   * Attack range runs edge to edge: the authored range plus both hull radii
+   * (Liquipedia, Unit Size). A melee creep's 100 reaches a hero 140 from its
+   * centre, and a tower's 700 reaches one 868 away.
+   */
   inAttackRange(source: Unit, target: Unit): boolean {
-    return dist(source.pos, target.pos) <= source.attackRange + target.radius;
+    return dist(source.pos, target.pos) <= source.attackRange + source.radius + target.radius;
   }
 
   // ----------------------------------------------------------------- orders
@@ -307,10 +329,11 @@ export class World {
    * walking — `moveTarget` is deliberately left intact so the order outlives
    * the kill, and on arrival the unit holds the spot and keeps swinging.
    *
-   * Acquisition is not an order, so no aggro check runs here: attack-moving
-   * past a wave must not pull it, only a deliberate click on a hero does.
-   * Allies are never acquired either, which is what stops attack-move from
-   * denying your own creeps for you.
+   * Acquisition is not an order, so it pulls nothing: attack-moving past a wave
+   * does not lock it onto you. The swings that follow count like any other,
+   * though, and one at a hero draws the creeps near you
+   * ({@link protectiveAggro}). Allies are never acquired, which is what stops
+   * attack-move from denying your own creeps for you.
    */
   private acquireForAttackMove(u: Unit) {
     let best: Unit | null = null;
@@ -340,42 +363,101 @@ export class World {
    * and it is why a deny quietly sheds aggro as a side effect.
    *
    * The order alone is enough either way: the attack never has to land, and on
-   * an ally it never does. Only hero-type targets count, and the system is on a
-   * per-hero cooldown, so a pull cannot be immediately re-pulled.
+   * an ally it never does. Both halves answer to the per-hero cooldown, so a
+   * pull can be neither repeated nor taken back until it has worn off.
    */
   runAggroCheck(attacker: Unit, target: Unit) {
     if (!this.config.aggroEnabled) return;
-
     // The two halves are not symmetric. Only an order on an enemy *hero* pulls:
     // last-hitting a creep has to stay free, or the drill would punish the one
     // thing it is teaching. Handing aggro back works off any unit of your own,
     // creeps included — clicking your own creep is how it is actually done.
-    const pull = target.team !== attacker.team && target.kind === 'hero';
-    const giveBack = target.team === attacker.team;
-    if (!pull && !giveBack) return;
+    if (target.team !== attacker.team && target.kind === 'hero') this.pullAggro(attacker);
+    else if (target.team === attacker.team) this.giveAggroBack(attacker);
+  }
 
-    // Only the pull is on cooldown. Giving aggro back has to stay available
-    // inside the 2.3 s you are holding it, or the mechanic could never be used.
-    if (pull) {
-      if (attacker.aggroCooldown > 0) return;
-      attacker.aggroCooldown = AGGRO_COOLDOWN;
-    }
+  /** An attack order on an enemy hero locks the creeps near you onto you for 2.3 s. */
+  private pullAggro(attacker: Unit) {
+    if (attacker.aggroCooldown > 0) return;
+    // The cooldown starts whether or not anything was near enough to come.
+    attacker.aggroCooldown = AGGRO_COOLDOWN;
     for (const u of this.units.values()) {
-      if (!u.alive || u.kind === 'hero') continue;
-      if (u.team === attacker.team) continue;
-      const radius = acquisitionRange(u.kind);
-      if (dist(u.pos, attacker.pos) > radius) continue;
-
-      if (pull) {
-        u.aggroTargetId = attacker.id;
-        u.aggroTimer = AGGRO_DURATION;
-      } else if (u.aggroTargetId === attacker.id) {
-        // Lowest threat now: give up the forced aggro and re-acquire normally.
-        u.aggroTargetId = null;
-        u.aggroTimer = 0;
-        if (u.attackTargetId === attacker.id) u.attackTargetId = null;
-      }
+      if (!u.alive || u.kind === 'hero' || u.team === attacker.team) continue;
+      if (dist(u.pos, attacker.pos) > AGGRO_RADIUS || this.aggroBlocked(u)) continue;
+      u.aggroTargetId = attacker.id;
+      u.aggroTimer = AGGRO_DURATION;
     }
+  }
+
+  /**
+   * Every swing at a hero that reaches its wind-up turns the creeps near the
+   * swinger onto it, auto-attacks included. It starts no cooldown and forces no
+   * chase, but it waits while the cooldown runs, so a trade that outlasts the
+   * three seconds of a pull brings the wave back (Liquipedia's "type 2" aggro).
+   */
+  private protectiveAggro(attacker: Unit) {
+    if (!this.config.aggroEnabled || attacker.aggroCooldown > 0) return;
+    for (const u of this.units.values()) {
+      if (!u.alive || u.kind === 'hero' || u.team === attacker.team) continue;
+      // A swing under way finishes on its own target, and a pull outranks this.
+      if (u.phase === 'windup' || u.aggroTimer > 0) continue;
+      if (dist(u.pos, attacker.pos) > AGGRO_RADIUS || this.aggroBlocked(u)) continue;
+      u.attackTargetId = attacker.id;
+      u.moveTarget = null;
+    }
+  }
+
+  /**
+   * An attack order on one of your own units: everything hitting you picks
+   * again with you ranked last, once the swing in hand has landed. Lane creeps
+   * only listen while your aggro cooldown is ready, and shedding them starts
+   * it. A tower keeps a cooldown of its own and only lets go when another of
+   * your units is nearer to it than you are.
+   */
+  private giveAggroBack(hero: Unit) {
+    let shed = false;
+    for (const u of this.units.values()) {
+      if (!u.alive || u.kind === 'hero' || u.team === hero.team) continue;
+      if (u.attackTargetId !== hero.id && u.aggroTargetId !== hero.id) continue;
+      if (u.kind === 'tower') {
+        if (u.aggroCooldown > 0 || !this.nearerAlly(u, hero)) continue;
+        u.aggroCooldown = TOWER_DEAGGRO_COOLDOWN;
+      } else {
+        if (hero.aggroCooldown > 0) continue;
+        shed = true;
+      }
+      u.aggroTargetId = null;
+      u.aggroTimer = 0;
+      u.shunnedId = hero.id;
+    }
+    if (shed) hero.aggroCooldown = AGGRO_COOLDOWN;
+  }
+
+  /** Whether one of `hero`'s side stands nearer `tower` than it does, and in its reach. */
+  private nearerAlly(tower: Unit, hero: Unit): boolean {
+    const d = dist(tower.pos, hero.pos);
+    for (const o of this.units.values()) {
+      if (!o.alive || o === hero || o.team !== hero.team || o.kind === 'tower') continue;
+      if (dist(tower.pos, o.pos) < d && this.inAttackRange(tower, o)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * The early-aggro block of 7.27: before 5:00 a lane creep ignores heroes'
+   * aggro unless an enemy creep is inside its acquisition range or it is within
+   * 1550 of its own tier 1 tower. Once waves meet the first clause is met, so it
+   * mostly spares a wave that has nothing left to fight.
+   */
+  private aggroBlocked(u: Unit): boolean {
+    if (!isCreep(u) || this.time >= AGGRO_BLOCK_UNTIL) return false;
+    const tower = this.towers.get(u.team);
+    if (tower && dist(u.pos, tower.pos) <= AGGRO_BLOCK_TOWER_RANGE) return false;
+    const range = acquisitionRange(u.kind);
+    for (const o of this.units.values()) {
+      if (o.alive && o.team !== u.team && isCreep(o) && dist(o.pos, u.pos) <= range) return false;
+    }
+    return true;
   }
 
   // ------------------------------------------------------------------- step
@@ -442,7 +524,7 @@ export class World {
     if (target) {
       if (!this.inAttackRange(u, target)) {
         const a = angleTo(u.pos, target.pos);
-        const stand = u.attackRange + target.radius - 20;
+        const stand = u.attackRange + u.radius + target.radius - 20;
         goal = { x: target.pos.x - Math.cos(a) * stand, y: target.pos.y - Math.sin(a) * stand };
       }
     } else if (u.moveTarget) {
@@ -651,6 +733,7 @@ export class World {
     u.phase = 'windup';
     u.phaseTimer = attackPointTime(u.attackPoint, u.attackSpeedBonus);
     u.attackCooldown = attackInterval(u.baseAttackTime, u.attackSpeedBonus);
+    if (u.kind === 'hero' && target.kind === 'hero') this.protectiveAggro(u);
   }
 
   private releaseAttack(source: Unit, target: Unit) {
@@ -740,9 +823,9 @@ export class World {
     if (victim.kind === 'hero') {
       if (victim.id === this.player.id) {
         this.stats.deaths++;
-        this.playerRespawnTimer = HERO_RESPAWN_TIME;
+        this.playerRespawnTimer = respawnTime(victim.level);
       } else {
-        victim.phaseTimer = HERO_RESPAWN_TIME;
+        victim.phaseTimer = respawnTime(victim.level);
       }
     } else if (!denied) {
       gold = victim.bounty;
@@ -780,6 +863,56 @@ export class World {
         u.aggroTimer = 0;
       }
     }
+
+    this.payExperience(source, victim, denied);
+  }
+
+  /**
+   * Share out what a death is worth among the living enemy heroes of the
+   * victim within {@link XP_RANGE} of it. The killer does not have to be one
+   * of them, except that whoever kills a hero always gets a share.
+   */
+  private payExperience(source: Unit, victim: Unit, denied: boolean) {
+    const worth =
+      victim.kind === 'hero' ? heroKillXp(victim.experience) : victim.bountyXp * (denied ? DENY_XP_FACTOR : 1);
+    if (worth <= 0) return;
+    const takers: Unit[] = [];
+    for (const u of this.units.values()) {
+      if (u.kind !== 'hero' || !u.alive || u.team === victim.team) continue;
+      if (dist(u.pos, victim.pos) <= XP_RANGE || (victim.kind === 'hero' && u === source)) takers.push(u);
+    }
+    if (takers.length === 0) return;
+    const share = Math.floor(worth / takers.length);
+    for (const u of takers) this.gainExperience(u, share);
+  }
+
+  private gainExperience(hero: Unit, amount: number) {
+    hero.experience += amount;
+    const level = levelForXp(hero.experience);
+    if (level > hero.level) this.setLevel(hero, level);
+    if (hero === this.player) {
+      this.stats.experience = hero.experience;
+      this.stats.level = hero.level;
+    }
+  }
+
+  /**
+   * Rebuild a hero's stats at a new level. Health keeps its fraction, as it
+   * does in Dota whenever max health changes: a level-up is more health to
+   * lose, not a heal.
+   */
+  private setLevel(hero: Unit, level: number) {
+    const loadout = this.loadouts.get(hero.id);
+    if (!loadout) return;
+    const tpl = heroById(loadout.heroId, loadout.items, level);
+    hero.hp *= tpl.maxHp / hero.maxHp;
+    hero.level = level;
+    hero.maxHp = tpl.maxHp;
+    hero.hpRegen = tpl.hpRegen;
+    hero.armor = tpl.armor;
+    hero.damageMin = tpl.damageMin;
+    hero.damageMax = tpl.damageMax;
+    hero.attackSpeedBonus = tpl.attackSpeedBonus;
   }
 
   private respawn(u: Unit, x: number) {
@@ -803,7 +936,8 @@ export class World {
 
   private spawnWave(radiantX: number, direX: number) {
     this.waveCount++;
-    const siege = this.waveCount % SIEGE_EVERY_N_WAVES === 0;
+    // Wave n leaves at (n - 1) x 30 s, so the 11th is the one at 5:00.
+    const siege = this.waveCount > 1 && (this.waveCount - 1) % SIEGE_EVERY_N_WAVES === 0;
     const make = (team: Team, x: number, tpl: typeof MELEE_CREEP, i: number) => {
       const y = ((i % 4) - 1.5) * 52 + (this.rng() - 0.5) * 18;
       const u = spawnUnit(tpl, team, { x: x + (this.rng() - 0.5) * 60, y }, this.rng);

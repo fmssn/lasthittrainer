@@ -53,21 +53,24 @@ Every unit and hero number comes from Valve's own `npc_units.txt` and
 `scripts/npc/heroes/*.txt`, not from memory or from a wiki summary. `npm run
 check` asserts the whole table, so they cannot drift.
 
-- Creeps use 7.3x base stats with no per-minute scaling — a drill is always minute zero, which is also the hardest timing to learn.
+- Creeps use 7.3x base stats with no per-minute scaling — a drill is always minute zero, which is also the hardest timing to learn. Siege creeps come every 10th wave from 5:00, as in Dota, so no drill here is long enough to see one.
 - Armor uses the real formula, `1 - 0.06a / (1 + 0.06|a|)`.
-- Attack point and attack interval both scale with attack speed, and heroes carry attack speed from agility at level 1 on top of their `BaseAttackSpeed`. The Swordmaster's is 110 rather than 100, so its authored 0.33s attack point is really 0.23s in lane.
+- Attack point and attack interval both scale with attack speed, and heroes carry attack speed from agility on top of their `BaseAttackSpeed`. The Swordmaster's is 110 rather than 100, so its authored 0.33s attack point is really 0.23s in lane.
 - Attack points are the real ones: 0.467s for a melee creep, 0.5s for a ranged one, 0.7s for siege. The wind-up roots you; the backswing is cancellable and never delays your next swing.
-- Melee lane creeps carry `creep_irresolute` and deal 25% less damage to heroes. Ranged and siege creeps do not — which is why pulling a ranged creep onto yourself hurts and standing in a melee wave does not.
-- Creeps are sticky: one that is standing and swinging holds its target until it dies or leaves attack range, and prefers whatever is already in range over chasing. Lane creeps rank other creeps above heroes, which is why you can stand inside an engaged wave untouched. Siege creeps invert it and go for buildings first.
+- Lane creeps carry the attack-class passives from `npc_abilities.txt`. Melee creeps deal 75% to heroes (`creep_irresolute`). Ranged creeps deal 50% to heroes and 150% to creeps (`creep_piercing`), so they are what kills a wave and the softest thing in it to be hit by. Siege creeps take half damage from heroes (`creep_siege`), so a catapult needs twice the swings its health bar suggests.
+- Creeps are sticky: one that is standing and swinging holds its target until it dies or leaves attack range. When it picks again, it goes by unit type first (heroes and creeps are one tier, as Valve's own glossary has it, then siege creeps, then buildings), then by threat (whatever is hitting it, then whatever is hitting its allies, then the idle), then by distance. That is why you can stand idle beside an engaged wave untouched, and why last hitting at the front of it draws hits. With nothing better in range a creep chases what it had for as long as it can: there is no leash. Siege creeps go for buildings first.
+- Aggro reaches 500 from the hero, whatever the creep. An attack order on the enemy hero pulls the creeps near you for 2.3s and starts a 3s cooldown; after that, every swing you take at a hero draws them again. Clicking one of your own units hands aggro back, but only once that cooldown is up, so a pull cannot be taken back. Before 5:00 a wave with no enemy creeps near it, and far from its own tower, ignores all of this, as in Dota since 7.27.
+- Attack range runs edge to edge, from the hull of the attacker to the hull of the target: a melee creep reaches a hero 140 away, and a tower 868.
 - A target that dies during your wind-up costs you the swing, and the run counts those.
-- Hero damage is base plus the level 1 primary attribute contribution. HP, armor and attack speed are derived from attributes the same way.
+- Heroes level. Every death pays its experience to the enemy heroes within 1500, shared, whoever landed the blow; a denied creep pays the enemy half and the denier nothing. Levels follow Dota's table (one wave is level 2), and each adds the hero file's attribute gains. Damage is base plus the primary attribute, and HP, armor and attack speed come from attributes the same way. A level-up keeps your health fraction rather than healing, and respawn time follows your level (12s at level 1).
 - Starting items are optional and come from `items.txt`: Quelling Blade, Iron Branch, Faerie Fire, Tango, Magic Stick, Slippers, Mantle, Gauntlets and Circlet, within 600 starting gold and six slots. Stat items go through the attribute rules, so Slippers speed up the swing. Quelling Blade is +8 damage for melee and +4 for ranged, against enemy creeps only — not on denies. Tangos stack into one slot, three charges a purchase, as they do in game. Tango and Magic Stick cannot be used; they are in the shop so a real opening buy fits the 600 gold. Only your hero carries items, and they show in an inventory in the HUD.
 - The item icons are drawn for this project in the style of the original mod's Warcraft III buttons. They are not the game's own art.
 - Tier 1 towers are present and **invulnerable on purpose**: they anchor the lane so a run cannot death-spiral, and they punish diving, but a tower falling would make every run a different game.
 - Turn rate is radians per 0.03s, so a 180° turn at 0.6 takes 0.157s. You have to be facing a creep before the swing starts.
 
-What is deliberately not here: experience, levels, items beyond a starting buy, abilities, fog of war,
-runes, neutral camps and high ground. This is a last-hit drill, not a laning
+What is deliberately not here: abilities (innates, skill points and talents
+included), items beyond a starting buy, fog of war, runes, neutral camps and
+high ground. This is a last-hit drill, not a laning
 simulator.
 
 ## Layout
@@ -91,7 +94,7 @@ npm run balance  # difficulty calibration for the enemy laner
 ```
 
 `npm run balance` drives both heroes with the same laning AI and holds your
-side at level 3. Level 3 against level 3 should come out even, and that is the
+side at bot profile 3. Profile 3 against profile 3 should come out even, and that is the
 check that matters: a lane where one side quietly farms better would flatter
 you and teach you nothing.
 

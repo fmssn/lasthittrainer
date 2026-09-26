@@ -1,7 +1,7 @@
 import type { Team, Unit } from '../types.ts';
 import type { World } from '../world.ts';
 import type { EnemyProfile } from '../config.ts';
-import { DENY_THRESHOLD, acquisitionRange } from '../constants.ts';
+import { AGGRO_RADIUS, DENY_THRESHOLD } from '../constants.ts';
 import { angleTo, dist } from '../math.ts';
 
 interface Memory {
@@ -140,7 +140,7 @@ export class EnemyHeroAi {
   /** Walk to just inside attack range without diving into the wave. */
   private approach(world: World, target: Unit) {
     const a = angleTo(target.pos, this.hero.pos);
-    const stand = this.hero.attackRange + target.radius - 40;
+    const stand = this.hero.attackRange + this.hero.radius + target.radius - 40;
     world.orderMove(this.hero, {
       x: target.pos.x + Math.cos(a) * stand,
       y: target.pos.y + Math.sin(a) * stand,
@@ -164,7 +164,7 @@ export class EnemyHeroAi {
     let nearby = 0;
     for (const u of world.units.values()) {
       if (!u.alive || u.kind !== 'melee_creep' || u.team === this.own) continue;
-      if (dist(u.pos, this.hero.pos) <= acquisitionRange(u.kind)) nearby++;
+      if (dist(u.pos, this.hero.pos) <= AGGRO_RADIUS) nearby++;
     }
     if (nearby >= 2) {
       this.harassCooldown = 2;
