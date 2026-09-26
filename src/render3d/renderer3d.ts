@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { Unit, Vec2 } from '../sim/types.ts';
 import type { World } from '../sim/world.ts';
 import { Scene3D } from './scene.ts';
-import { UnitView, type CreepAsset } from './unitView.ts';
+import { UnitView, type UnitAssets } from './unitView.ts';
 import {
   KIND_SCALE,
   KIND_SHIFT,
@@ -136,7 +136,7 @@ export class Renderer3D {
   constructor(
     container: HTMLElement,
     before: HTMLElement,
-    private readonly asset: CreepAsset,
+    private readonly assets: UnitAssets,
   ) {
     this.canvas = document.createElement('canvas');
     this.canvas.className = 'stage3d';
@@ -293,11 +293,17 @@ export class Renderer3D {
 
   /**
    * The catapult is authored directly in sim units and has no skeleton, so it
-   * takes neither the shared rig nor its per-kind scale.
+   * takes neither the shared rig nor its per-kind scale. Melee and ranged
+   * creeps are KayKit skeletons in their team's colours; heroes are the box rig.
    */
   private makeView(unit: Unit): UnitLike {
     if (unit.kind === 'siege_creep') return new SiegeView(unit);
-    const view = new UnitView(unit, this.asset, tintFor(unit));
+    const kind = unit.kind;
+    const asset =
+      kind === 'melee_creep' || kind === 'ranged_creep'
+        ? this.assets.creeps[kind][unit.team]
+        : this.assets.box;
+    const view = new UnitView(unit, asset, tintFor(unit));
     view.root.scale.multiplyScalar(KIND_SCALE[unit.kind] ?? 1);
     return view;
   }

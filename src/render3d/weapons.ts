@@ -3,18 +3,13 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import type { UnitKind } from '../sim/types.ts';
 
 /**
- * Procedural kit for the shared creep rig: weapons, helmets, shields, capes.
+ * Procedural kit for the box rig the heroes are drawn with: a weapon, a crown,
+ * pauldrons and a cape.
  *
- * The rig carries nothing of its own, so one GLB serves every unit in the lane
- * and this file bolts the differences on at load time. Everything is built from
- * boxes, like the rig itself — the point is silhouette, not art.
- *
- * Silhouette is not decoration here. A ranged creep has 300 HP and a melee one
- * 550, and which is which decides whether a swing is a last hit or a wasted
- * one. When both are the same box-man in the same colour at two slightly
- * different scales, that call is being made off a health bar alone. A hood and
- * a bow against a helmet and a sword makes it readable from across the lane,
- * which is what the real game gives you.
+ * The rig carries nothing of its own, so this file bolts the kit on at load
+ * time. Everything is built from boxes, like the rig itself — the point is
+ * silhouette, not art. The creeps are KayKit models that carry their own
+ * weapons and armour (tools/blender/build_units.py).
  *
  * Everything is authored in the model's own units (the rig is 1.85 tall) and
  * parented to a bone, so the root's MODEL_SCALE and the skeleton's animation
@@ -161,34 +156,6 @@ function makeBow() {
  * skull — sits at y = 0.4.
  */
 
-/**
- * Crested helm: the melee creep reads as armoured and front-heavy.
- *
- * Kept narrower than the skull on purpose. The camera looks down the lane at a
- * 57 degree pitch, so a cap sized to the head is a plate covering the whole
- * unit from above and the team colour underneath disappears. The crest does the
- * identifying instead — a fore-and-aft ridge is exactly what stays readable
- * from up there.
- */
-function makeHelm() {
-  return build([
-    { geom: box(0.34, 0.12, 0.34, 0, 0.33, 0), mat: MATS.darkSteel },
-    // A brow that overhangs the face is most of what makes a box read as a helm.
-    { geom: box(0.36, 0.07, 0.1, 0, 0.26, 0.16), mat: MATS.darkSteel },
-    { geom: box(0.07, 0.17, 0.44, 0, 0.46, -0.02), mat: MATS.steel },
-  ]);
-}
-
-/** Peaked hood: the ranged creep reads as a robed caster, not a soldier. */
-function makeHood() {
-  return build([
-    { geom: box(0.36, 0.42, 0.16, 0, 0.24, -0.14), mat: MATS.cloth },
-    { geom: box(0.3, 0.26, 0.3, 0, 0.3, 0.0), mat: MATS.cloth },
-    // The peak leans forward, which is what separates a hood from a bucket.
-    { geom: box(0.12, 0.26, 0.18, 0, 0.5, 0.05), mat: MATS.cloth },
-  ]);
-}
-
 /** A three-pointed crown, so the hero is the tallest thing in the lane. */
 function makeCrown() {
   const parts = [{ geom: box(0.4, 0.09, 0.4, 0, 0.3, 0), mat: MATS.gold }];
@@ -200,8 +167,8 @@ function makeCrown() {
 }
 
 /** Pauldrons on the spine bone: width at the shoulder line. */
-function makePauldrons(big: boolean) {
-  const w = big ? 0.2 : 0.16;
+function makePauldrons() {
+  const w = 0.2;
   const parts = [];
   for (const x of [-1, 1]) {
     parts.push({ geom: box(w, 0.13, 0.3, x * 0.3, 0.33, 0), mat: MATS.darkSteel });
@@ -217,40 +184,23 @@ function makeCape() {
   ]);
 }
 
-/** A round-ish shield for the melee creep's off hand. */
-function makeShield() {
-  return build([
-    { geom: box(0.06, 0.4, 0.34, 0.06, 0, 0.04), mat: MATS.wood },
-    { geom: box(0.04, 0.44, 0.1, 0.07, 0, 0.04), mat: MATS.darkSteel },
-    { geom: box(0.05, 0.12, 0.12, 0.09, 0, 0.04), mat: MATS.steel },
-  ]);
-}
-
-type KitPart = 'sword' | 'bow' | 'helm' | 'hood' | 'crown' | 'pauldrons' | 'bigPauldrons' | 'cape' | 'shield';
+type KitPart = 'sword' | 'bow' | 'crown' | 'bigPauldrons' | 'cape';
 
 const MAKERS: Record<KitPart, () => ReturnType<typeof build>> = {
   sword: makeSword,
   bow: makeBow,
-  helm: makeHelm,
-  hood: makeHood,
   crown: makeCrown,
-  pauldrons: () => makePauldrons(false),
-  bigPauldrons: () => makePauldrons(true),
+  bigPauldrons: makePauldrons,
   cape: makeCape,
-  shield: makeShield,
 };
 
 /** Bone each part hangs on, and how far down that bone it sits. */
 const MOUNT: Record<KitPart, { bone: string; y: number }> = {
   sword: { bone: HAND_BONE.sword, y: HAND_Y },
   bow: { bone: HAND_BONE.bow, y: HAND_Y },
-  helm: { bone: 'head', y: 0 },
-  hood: { bone: 'head', y: 0 },
   crown: { bone: 'head', y: 0 },
-  pauldrons: { bone: 'spine', y: 0 },
   bigPauldrons: { bone: 'spine', y: 0 },
   cape: { bone: 'spine', y: 0 },
-  shield: { bone: HAND_BONE.bow, y: HAND_Y },
 };
 
 /** Built once and shared: every unit of a kind draws the same geometry. */
@@ -289,11 +239,10 @@ function attachPart(rig: THREE.Object3D, kind: KitPart): boolean {
 
 /** What each kind of unit wears. */
 function kitFor(kind: UnitKind, ranged: boolean): KitPart[] {
+  // Only heroes are drawn on this rig: melee and ranged creeps are KayKit
+  // models and the siege creep is SiegeView's catapult.
   if (kind === 'hero') return [ranged ? 'bow' : 'sword', 'crown', 'bigPauldrons', 'cape'];
-  if (kind === 'ranged_creep') return ['bow', 'hood'];
-  // The siege creep is not drawn on this rig at all; see SiegeView.
-  if (kind === 'siege_creep') return [];
-  return ['sword', 'shield', 'helm', 'pauldrons'];
+  return [];
 }
 
 /**

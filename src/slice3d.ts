@@ -1,7 +1,7 @@
 import { World } from './sim/world.ts';
 import { DEFAULT_CONFIG } from './sim/config.ts';
 import { Renderer3D } from './render3d/renderer3d.ts';
-import { loadCreep } from './render3d/unitView.ts';
+import { loadUnitAssets } from './render3d/unitView.ts';
 
 /**
  * 3D debug page.
@@ -22,8 +22,8 @@ const info = document.getElementById('info') as HTMLDivElement;
 
 const world = new World({ ...DEFAULT_CONFIG, duration: 99999 });
 
-loadCreep('/models/melee_creep.glb')
-  .then((asset) => start(new Renderer3D(app, info, asset)))
+loadUnitAssets((path) => `/${path}`)
+  .then((assets) => start(new Renderer3D(app, info, assets)))
   .catch((err) => {
     info.textContent = `Failed to load creep: ${err.message}`;
     console.error(err);
