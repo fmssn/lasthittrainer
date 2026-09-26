@@ -28,6 +28,19 @@ Blender and packs from `tools/fetch_assets.sh`:
 melee_creep` for one look, `--renders DIR` for contact sheets under `xvfb-run`).
 It checks every file it writes and two builds are byte-identical.
 
+`tools/blender/check_anim.py` checks the hero clips the way three.js plays
+them and films what it finds: `<blender> --background --python
+tools/blender/check_anim.py -- --glb public/models/heroes/swordmaster.glb
+--glb public/models/heroes/frost_archer.glb [--blend tools/blender/heroes.blend]
+[--clips Attack,Walk] [--no-video]` (under `xvfb-run -a` without a display).
+Per bone and 60 fps sample it measures the parent-relative turn (short path),
+jitter and the Idle/Walk loop seams; it also measures clipping between the
+deformed meshes (bind-pose intersections excluded), GLB weights, and with
+`--blend` influences past four and Preserve Volume. Thresholds are constants at
+the top. It writes `shots/anim/report.md`, `report.json`, and one MP4 per hero
+and clip: clay 3/4 and side views, 4x slow, flagged frames held, flagged bones
+orange and clipping faces red. It reads the models and never writes them.
+
 The three browser harnesses drive the Chromium a Claude Code container ships at
 `/opt/pw-browsers`; anywhere else they fall back to playwright's own, which
 `npx playwright install chromium` fetches once. `CHROMIUM` overrides both
@@ -305,3 +318,11 @@ state should go in the renderer.
     Properties `hitTime` is lost, and the loader then treats the model as a creep.
   - Key every bone in every clip. A channel a clip leaves unkeyed keeps
     whatever the last clip left there, and the exporter bakes that in.
+    That includes location: the Swordmaster's `weapon` location was keyed
+    only in Death, which floated the sword 80 cm off the hand in the other
+    three clips depending on which clip Blender had evaluated last.
+  - Hide a bone at scale 0.001, not 0. The exporter samples whole matrices,
+    and a zero-scale matrix has no rotation, so the file gets an arbitrary
+    one (the arrow spun 82 degrees on the frame it was hidden).
+  - Run `tools/blender/check_anim.py` on the exported files afterwards: no
+    rotation or jitter flags is the bar.
