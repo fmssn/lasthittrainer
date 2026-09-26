@@ -9,8 +9,7 @@ import { Menu } from './ui/menu.ts';
 import { Results } from './ui/results.ts';
 import { Mixer, type Voice } from './audio/mixer.ts';
 import { LaneAudio } from './audio/laneAudio.ts';
-import { loadSoundSettings, saveSoundSettings } from './audio/settings.ts';
-import type { SoundControls } from './ui/menu.ts';
+import { loadMuted, saveMuted } from './audio/settings.ts';
 
 /**
  * Where a file under public/ comes from.
@@ -29,18 +28,7 @@ const modelUrl = (path: string) => INLINED?.[path] ?? `${import.meta.env.BASE_UR
 // that fails only leaves its sound silent.
 const mixer = new Mixer(modelUrl);
 void mixer.load();
-let soundSettings = loadSoundSettings();
-const sound: SoundControls = {
-  get: () => soundSettings,
-  set(patch, save) {
-    soundSettings = { ...soundSettings, ...patch };
-    const { master, effects, ambience, muted } = soundSettings;
-    mixer.setVolume({ master, effects, ambience });
-    mixer.setMuted(muted);
-    if (save) saveSoundSettings(soundSettings);
-  },
-};
-sound.set({}, false);
+mixer.setMuted(loadMuted());
 /** The loop under a running drill, so the end of the run can fade it. */
 let ambience: Voice | null = null;
 
@@ -81,7 +69,7 @@ overlay.addEventListener(
   true,
 );
 
-const menu = new Menu(overlay, (config) => start(config), sound);
+const menu = new Menu(overlay, (config) => start(config));
 const results = new Results(
   overlay,
   () => {
@@ -132,7 +120,10 @@ async function boot() {
     if (state === 'playing') setPaused(true);
     else if (state === 'paused') setPaused(false);
   };
-  input.onMute = () => sound.set({ muted: !soundSettings.muted }, true);
+  input.onMute = () => {
+    mixer.setMuted(!mixer.isMuted());
+    saveMuted(mixer.isMuted());
+  };
 
   menu.show();
   requestAnimationFrame(frame);

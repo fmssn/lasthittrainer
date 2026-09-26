@@ -40,6 +40,13 @@ const ownHero = (file: string): SoundDef => ({
   positional: true,
 });
 
+/**
+ * The level every creep sound is set from. It was -10 and read as too loud on
+ * the first listen: a wave collision is a dozen of them at once. Turn this,
+ * not the individual lines, while the lane is still too busy.
+ */
+const CREEP_DB = -16;
+
 export const SOUNDS = {
   last_hit_gold: { files: ['last_hit_gold_1.wav'], group: 'effects', gainDb: 0, voices: Infinity, positional: false },
   deny: { files: ['deny_1.wav'], group: 'effects', gainDb: 0, voices: Infinity, positional: false },
@@ -50,12 +57,12 @@ export const SOUNDS = {
   bow_release: ownHero('bow_release_1.wav'),
   frost_arrow_hit: ownHero('frost_arrow_hit_1.wav'),
 
-  melee_creep_hit: lane('melee_creep_hit_1.wav', -10),
-  ranged_creep_cast: lane('ranged_creep_cast_1.wav', -10),
-  ranged_creep_hit: lane('ranged_creep_hit_1.wav', -10),
-  creep_death: lane('creep_death_1.wav', -12),
-  siege_launch: lane('siege_launch_1.wav', -8),
-  siege_hit: lane('siege_hit_1.wav', -8),
+  melee_creep_hit: lane('melee_creep_hit_1.wav', CREEP_DB),
+  ranged_creep_cast: lane('ranged_creep_cast_1.wav', CREEP_DB),
+  ranged_creep_hit: lane('ranged_creep_hit_1.wav', CREEP_DB),
+  creep_death: lane('creep_death_1.wav', CREEP_DB - 2),
+  siege_launch: lane('siege_launch_1.wav', CREEP_DB + 2),
+  siege_hit: lane('siege_hit_1.wav', CREEP_DB + 2),
   tower_attack: lane('tower_attack_1.wav', -8),
   tower_hit: lane('tower_hit_1.wav', -8),
   hero_death: lane('hero_death_1.wav', -6, 2),

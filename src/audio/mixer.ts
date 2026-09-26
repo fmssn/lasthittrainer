@@ -40,7 +40,6 @@ export class Mixer {
   private buffers = new Map<SoundName, AudioBuffer[]>();
   private playing = new Map<SoundName, Playing[]>();
   private lastPick = new Map<SoundName, number>();
-  private volume = { master: 1, effects: 1, ambience: 1 };
   private muted = false;
   /** Plays requested per sound, whether or not anything was audible. */
   readonly counts: Partial<Record<SoundName, number>> = {};
@@ -187,16 +186,7 @@ export class Mixer {
     g.linearRampToValueAtTime(1, t + DUCK.seconds + 0.2);
   }
 
-  /** Slider values, 0..1 each. They act on gains only and never reach the sim. */
-  setVolume(v: Partial<Mixer['volume']>) {
-    Object.assign(this.volume, v);
-    this.applyVolume();
-  }
-
-  getVolume() {
-    return { ...this.volume };
-  }
-
+  /** Acts on the master gain only, so it can never reach the sim. */
   setMuted(muted: boolean) {
     this.muted = muted;
     this.applyVolume();
@@ -208,14 +198,8 @@ export class Mixer {
 
   private applyVolume() {
     if (!this.ctx || !this.master) return;
-    // Sliders run on a squared curve: linear gain makes the bottom half of a
-    // slider do nothing you can hear.
-    const curve = (x: number) => x * x;
-    this.master.gain.value = this.muted ? 0 : curve(this.volume.master);
-    for (const [g, node] of this.groups) {
-      const slider = g === 'effects' ? this.volume.effects : g === 'ambience' ? this.volume.ambience : 1;
-      node.gain.value = dbToGain(GROUP_DB[g]) * curve(slider);
-    }
+    this.master.gain.value = this.muted ? 0 : 1;
+    for (const [g, node] of this.groups) node.gain.value = dbToGain(GROUP_DB[g]);
   }
 }
 

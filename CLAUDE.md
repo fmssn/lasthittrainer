@@ -136,7 +136,8 @@ src/audio/        Lane sound, render-side like the effects
                   Knows nothing about World.
   laneAudio.ts    Reads World each frame and calls the mixer. The only file
                   that knows what a DamageEvent is.
-  settings.ts     Volume and mute, in localStorage (key `lht.audio.v1`)
+  settings.ts     Mute (the M key), in localStorage (key `lht.audio.v1`). No
+                  volume controls in the menu, by request.
 src/ui/           menu.ts, hud.ts, results.ts — plain DOM over the canvas
   inventory.ts    The six item slots, shared by the menu, HUD and results
   itemIcons.ts    Item icons as SVG, in the style of the WC3 buttons
