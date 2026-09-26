@@ -41,11 +41,12 @@ const ownHero = (file: string): SoundDef => ({
 });
 
 /**
- * The level every creep sound is set from. It was -10 and read as too loud on
- * the first listen: a wave collision is a dozen of them at once. Turn this,
- * not the individual lines, while the lane is still too busy.
+ * The level every creep sound is set from. It started at -10 and was too loud
+ * by ear twice, at -10 and -16: a wave collision is a dozen of them at once,
+ * and they are background to your own swing. Turn this, not the individual
+ * lines, while the lane is still too busy.
  */
-const CREEP_DB = -16;
+const CREEP_DB = -22;
 
 export const SOUNDS = {
   last_hit_gold: { files: ['last_hit_gold_1.wav'], group: 'effects', gainDb: 0, voices: Infinity, positional: false },
