@@ -2,9 +2,19 @@ import * as THREE from 'three';
 import type { Unit, Vec2 } from '../sim/types.ts';
 import type { World } from '../sim/world.ts';
 import { Scene3D } from './scene.ts';
-import { UnitView, MODEL_HEIGHT, type CreepAsset } from './unitView.ts';
+import { UnitView, type CreepAsset } from './unitView.ts';
+import {
+  KIND_SCALE,
+  KIND_SHIFT,
+  TEAM_TINT,
+  TOWER_VISUAL_RADIUS,
+  pickRadius,
+  rigHeight,
+} from './appearance.ts';
 import { Annotations } from './annotations.ts';
 import { ProjectileLayer } from './projectileView.ts';
+import { Effects } from './effects.ts';
+import { SiegeView } from './siegeView.ts';
 import { isPlayerTarget } from './targetAids.ts';
 
 /**
@@ -21,37 +31,11 @@ import { isPlayerTarget } from './targetAids.ts';
  * The sim is untouched by all of it.
  */
 
-/** Per-team base colour for the one creep rig, matching the 2D palette. */
-const TEAM_TINT: Record<string, number> = { radiant: 0x4e8f5f, dire: 0xa8564f };
-/** Kind nudges the base colour so ranged/siege still read apart at a glance. */
-const KIND_SHIFT: Record<string, number> = {
-  melee_creep: 1,
-  ranged_creep: 0.78,
-  siege_creep: 0.62,
-  hero: 1.35,
-};
-const SCALE: Record<string, number> = {
-  melee_creep: 1,
-  ranged_creep: 0.88,
-  siege_creep: 1.25,
-  hero: 1.45,
-};
-
 /** Ring line thickness in sim units — constant, so far rings stay visible. */
 const RING_WIDTH = 7;
 
-/** Height of the tower body, mirroring the cylinder {@link towerMesh} builds. */
-const TOWER_HEIGHT = 260;
-/**
- * Slack added to a unit's sim radius when picking, matching the ground-plane
- * tolerance in `World.unitAt` so both renderers feel the same at the feet.
- */
-const PICK_PAD = 16;
-
-/** Height of a unit's drawn volume in sim units — what the cursor ray tests. */
-function pickHeight(unit: Unit): number {
-  return unit.kind === 'tower' ? TOWER_HEIGHT : MODEL_HEIGHT * (SCALE[unit.kind] ?? 1);
-}
+/** Slack added to a unit's drawn half-width when picking. */
+const PICK_PAD = 8;
 
 /**
  * Distance along `ray` at which it enters an upright cylinder standing on the
@@ -98,8 +82,19 @@ function rayCylinder(ray: THREE.Ray, cx: number, cz: number, r: number, h: numbe
   return Math.max(enter, 0);
 }
 
+/**
+ * Every unit view answers the same four things, so the renderer does not care
+ * whether a unit is the shared skinned rig or the catapult's own geometry.
+ */
+interface UnitLike {
+  readonly root: THREE.Object3D;
+  sync(unit: Unit, dt: number): void;
+  dispose(): void;
+  readonly clip: string;
+}
+
 interface Rec {
-  view: UnitView;
+  view: UnitLike;
   /** Last seen sim state, kept so a unit removed mid-death still falls over. */
   last: Unit;
   /** Seconds since the unit vanished from the sim. */
@@ -125,6 +120,7 @@ export class Renderer3D {
   private readonly rings: THREE.Mesh[] = [];
   private ringsUsed = 0;
   private readonly bolts: ProjectileLayer;
+  private readonly effects: Effects;
   private readonly cursorRing: THREE.Mesh;
 
   private readonly raycaster = new THREE.Raycaster();
@@ -149,7 +145,8 @@ export class Renderer3D {
 
     this.stage = new Scene3D(this.canvas);
     this.annotations = new Annotations(container, before, this.stage.camera);
-    this.bolts = new ProjectileLayer(this.stage.scene);
+    this.effects = new Effects(this.stage.scene);
+    this.bolts = new ProjectileLayer(this.stage.scene, this.effects);
 
     this.cursorRing = this.makeRing(26, 0xffffff, 0.35);
     this.stage.scene.add(this.cursorRing);
@@ -208,8 +205,8 @@ export class Renderer3D {
         this.raycaster.ray,
         unit.pos.x,
         unit.pos.y,
-        unit.radius + PICK_PAD,
-        pickHeight(unit),
+        pickRadius(unit) + PICK_PAD,
+        rigHeight(unit),
       );
       if (t !== null && t < bestT) {
         bestT = t;
@@ -242,13 +239,15 @@ export class Renderer3D {
     this.ringsUsed = 0;
     this.drawTowerZones(world);
     if (world.config.showRangeRings && world.player.alive) {
-      this.ring(world.player.pos, world.player.attackRange, 0xffd479, 0.22);
+      this.ring(world.player.pos, world.player.attackRange, 0xffd479, 0.14);
     }
+    this.drawSelection(world);
     this.drawKillable(world);
     for (let i = this.ringsUsed; i < this.rings.length; i++) this.rings[i].visible = false;
 
     this.cursorRing.position.set(this.cursor.x, 2, this.cursor.y);
-    this.bolts.sync(world);
+    this.bolts.sync(world, dt, this.effects.consume(world));
+    this.effects.update(dt);
 
     this.stage.render();
     this.annotations.draw(world, this.hoverId);
@@ -259,6 +258,9 @@ export class Renderer3D {
     this.observer.disconnect();
     this.clearScene();
     this.annotations.dispose();
+    this.effects.dispose();
+    this.bolts.dispose();
+    this.stage.dispose();
     this.stage.renderer.dispose();
     this.canvas.remove();
   }
@@ -280,15 +282,24 @@ export class Renderer3D {
 
     let rec = this.views.get(unit.id);
     if (!rec) {
-      const view = new UnitView(unit, this.asset, tintFor(unit));
-      view.root.scale.multiplyScalar(SCALE[unit.kind] ?? 1);
-      this.stage.scene.add(view.root);
-      rec = { view, last: unit, ghost: 0 };
+      rec = { view: this.makeView(unit), last: unit, ghost: 0 };
+      this.stage.scene.add(rec.view.root);
       this.views.set(unit.id, rec);
     }
     rec.last = unit;
     rec.ghost = 0;
     rec.view.sync(unit, dt);
+  }
+
+  /**
+   * The catapult is authored directly in sim units and has no skeleton, so it
+   * takes neither the shared rig nor its per-kind scale.
+   */
+  private makeView(unit: Unit): UnitLike {
+    if (unit.kind === 'siege_creep') return new SiegeView(unit);
+    const view = new UnitView(unit, this.asset, tintFor(unit));
+    view.root.scale.multiplyScalar(KIND_SCALE[unit.kind] ?? 1);
+    return view;
   }
 
   /** Units the sim has forgotten: hold the corpse long enough to read the fall. */
@@ -349,22 +360,44 @@ export class Renderer3D {
     this.ringsUsed++;
   }
 
+  /**
+   * Tower threat rings, faded in by how close the player is to walking into
+   * one. Drawn flat they are 700-unit circles that cross the whole screen and
+   * read as leftover debug geometry; what you actually want to know is when
+   * the edge is near enough to matter.
+   */
   private drawTowerZones(world: World) {
     for (const u of world.units.values()) {
       if (u.kind !== 'tower' || !u.alive) continue;
-      this.ring(u.pos, u.attackRange, u.team === 'radiant' ? 0x5fbf7a : 0xd8615a, 0.16);
+      const d = Math.hypot(world.player.pos.x - u.pos.x, world.player.pos.y - u.pos.y);
+      // Off entirely until the edge is within walking distance. A 700-unit
+      // circle spans the whole screen at this zoom, so one that is always on is
+      // just a line through the middle of the lane.
+      if (d > u.attackRange + 600) continue;
+      this.ring(u.pos, u.attackRange, u.team === 'radiant' ? 0x5fbf7a : 0xd8615a, 0.2);
     }
   }
 
+  /**
+   * A pulse at the feet of anything you could kill with a swing started now.
+   * The gold frame {@link Annotations} puts on the health bar is the primary
+   * cue; this is the peripheral one, for creeps you are not looking straight at.
+   */
   private drawKillable(world: World) {
     if (!world.config.showKillableHighlight || !world.player.alive) return;
-    const pulse = 0.55 + 0.45 * Math.sin(world.time * 12);
+    const pulse = 0.45 + 0.35 * Math.sin(world.time * 12);
     for (const u of world.aliveUnits()) {
       if (u.kind === 'hero' || u.kind === 'tower') continue;
       if (!isPlayerTarget(world, u)) continue;
       if (!world.shouldSwingNow(world.player, u)) continue;
-      this.ring(u.pos, u.radius + 18, u.team === 'radiant' ? 0x7fd6a2 : 0xffd479, pulse);
+      this.ring(u.pos, pickRadius(u) + 10, u.team === 'radiant' ? 0x7fd6a2 : 0xffd479, pulse);
     }
+  }
+
+  /** The ring under your own hero, so you never lose it in a wave. */
+  private drawSelection(world: World) {
+    if (!world.player.alive) return;
+    this.ring(world.player.pos, pickRadius(world.player) + 8, 0xdfe9f2, 0.75);
   }
 
   // ------------------------------------------------------------------- misc
@@ -376,6 +409,36 @@ export class Renderer3D {
     this.towers.clear();
     for (const r of this.rings) r.visible = false;
     this.bolts.clear();
+    this.effects.clear();
+  }
+
+  /**
+   * Where a sim point lands on screen, in CSS pixels. The inverse of
+   * {@link toWorld}, and the only way anything outside the renderer can aim at
+   * a unit — which is what lets the harness click on one.
+   */
+  toScreen(p: Vec2, up = 0): Vec2 {
+    const v = new THREE.Vector3(p.x, up, p.y).project(this.stage.camera);
+    const w = this.canvas.clientWidth || 1;
+    const h = this.canvas.clientHeight || 1;
+    return { x: (v.x * 0.5 + 0.5) * w, y: (-v.y * 0.5 + 0.5) * h };
+  }
+
+  /**
+   * Debug only: what the last frame cost. Triangle and draw-call counts are the
+   * only performance numbers worth trusting from this project's own harness —
+   * it renders through SwiftShader, so frame times here say nothing about a
+   * real GPU.
+   */
+  stats() {
+    const info = this.stage.renderer.info;
+    return {
+      calls: info.render.calls,
+      triangles: info.render.triangles,
+      geometries: info.memory.geometries,
+      textures: info.memory.textures,
+      rigs: this.views.size,
+    };
   }
 
   /** Debug only: how many rigs are playing each clip. Drives the slice readout. */
@@ -400,18 +463,44 @@ export class Renderer3D {
   }
 }
 
+/**
+ * A tier 1 tower: tapered stone shaft, a wider crown, and a lit brazier on top.
+ * Built from the drawn radius rather than the collision hull, which at 144 is
+ * more than twice as wide as a tower looks.
+ */
 function towerMesh(unit: Unit): THREE.Object3D {
   const g = new THREE.Group();
-  const body = new THREE.Mesh(
-    new THREE.CylinderGeometry(unit.radius * 0.9, unit.radius * 1.3, 260, 8),
+  const radiant = unit.team === 'radiant';
+  const stone = new THREE.MeshStandardMaterial({
+    color: radiant ? 0x6d7360 : 0x6b585a,
+    roughness: 0.95,
+  });
+  const r = TOWER_VISUAL_RADIUS;
+
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.95, r * 1.25, 60, 8), stone);
+  base.position.y = 30;
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.62, r * 0.92, 170, 8), stone);
+  shaft.position.y = 145;
+  const crown = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.86, r * 0.66, 34, 8), stone);
+  crown.position.y = 245;
+  for (const m of [base, shaft, crown]) {
+    m.castShadow = true;
+    m.receiveShadow = true;
+    g.add(m);
+  }
+
+  // The brazier reads the team colour from much further away than the stone
+  // does, and gives the tower a silhouette that is not just a cylinder.
+  const glow = new THREE.Mesh(
+    new THREE.SphereGeometry(r * 0.34, 12, 10),
     new THREE.MeshStandardMaterial({
-      color: unit.team === 'radiant' ? 0x4a5d3a : 0x5d3a3a,
-      roughness: 0.9,
+      color: radiant ? 0x9ff0b4 : 0xff9a7a,
+      emissive: radiant ? 0x3fbf6a : 0xd8492f,
+      emissiveIntensity: 1.4,
+      roughness: 0.4,
     }),
   );
-  body.position.y = 130;
-  body.castShadow = true;
-  body.receiveShadow = true;
-  g.add(body);
+  glow.position.y = 272;
+  g.add(glow);
   return g;
 }

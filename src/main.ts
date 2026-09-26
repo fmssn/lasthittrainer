@@ -8,6 +8,19 @@ import { Hud } from './ui/hud.ts';
 import { Menu } from './ui/menu.ts';
 import { Results } from './ui/results.ts';
 
+/**
+ * Where the creep rig comes from.
+ *
+ * The single-file build (`npm run pack`) has nowhere to fetch a file from — the
+ * whole app is one HTML document, and the strict CSP it is published under
+ * blocks the request anyway — so it injects the GLB as a `data:` URL on this
+ * global instead. `loadCreep` already knows to parse a data: URL rather than
+ * fetch one, which is the only reason that path exists.
+ */
+const MODEL_URL =
+  (window as unknown as { __LHT_MODEL__?: string }).__LHT_MODEL__ ??
+  `${import.meta.env.BASE_URL}models/melee_creep.glb`;
+
 const SIM_STEP = 1 / 120;
 const MAX_CATCHUP = 0.25;
 /** How far ahead of the player the camera sits, in sim units. */
@@ -60,7 +73,7 @@ async function boot() {
 
   let asset: CreepAsset;
   try {
-    asset = await loadCreep('/models/melee_creep.glb');
+    asset = await loadCreep(MODEL_URL);
   } catch (err) {
     // textContent, not innerHTML: the message comes from a loader, not from us.
     loading.querySelector('h1')!.textContent = 'Could not start';
@@ -194,5 +207,9 @@ if (import.meta.env.DEV) {
     },
     start,
     finish,
+    /** Draw-call and triangle budget, for the perf sanity check in tools/. */
+    renderStats: () => renderer.stats(),
+    /** Screen position of a sim point, so a harness can click on a unit. */
+    toScreen: (p: { x: number; y: number }, up = 0) => renderer.toScreen(p, up),
   };
 }

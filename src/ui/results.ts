@@ -92,6 +92,11 @@ function takeaway(
   stats: Stats,
   config: DrillConfig,
 ): string {
+  // A run too short for any enemy creep to die scores 0/0, which is not the
+  // same as missing everything and must not be read back as "under half".
+  if (stats.lastHits + stats.missed === 0) {
+    return 'No creep died on your side of the lane in that run. Give it long enough for a wave to actually fight.';
+  }
   if (stats.deaths > 0) {
     return 'You died in a farming drill. Step back between hits — being in creep acquisition range costs more than any single last hit.';
   }

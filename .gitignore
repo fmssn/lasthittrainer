@@ -1,3 +1,5 @@
 node_modules
 dist
+dist-artifact
+shots
 .DS_Store

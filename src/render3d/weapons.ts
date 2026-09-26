@@ -1,12 +1,20 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import type { UnitKind } from '../sim/types.ts';
 
 /**
- * Procedural weapons for the shared creep rig.
+ * Procedural kit for the shared creep rig: weapons, helmets, shields, capes.
  *
- * The rig carries no weapon of its own, so one GLB serves melee and ranged
- * units: this file bolts a sword or a bow onto a hand bone at load time. Both
- * are built from boxes, like the rig itself — the point is silhouette, not art.
+ * The rig carries nothing of its own, so one GLB serves every unit in the lane
+ * and this file bolts the differences on at load time. Everything is built from
+ * boxes, like the rig itself — the point is silhouette, not art.
+ *
+ * Silhouette is not decoration here. A ranged creep has 300 HP and a melee one
+ * 550, and which is which decides whether a swing is a last hit or a wasted
+ * one. When both are the same box-man in the same colour at two slightly
+ * different scales, that call is being made off a health bar alone. A hood and
+ * a bow against a helmet and a sword makes it readable from across the lane,
+ * which is what the real game gives you.
  *
  * Everything is authored in the model's own units (the rig is 1.85 tall) and
  * parented to a bone, so the root's MODEL_SCALE and the skeleton's animation
@@ -61,9 +69,24 @@ const MATS = {
   leather: new THREE.MeshStandardMaterial({ color: 0x2f2621, roughness: 0.95, flatShading: true }),
   wood: new THREE.MeshStandardMaterial({ color: 0x6b4a2c, roughness: 0.9, flatShading: true }),
   string: new THREE.MeshStandardMaterial({ color: 0xd8cdb4, roughness: 0.8 }),
+  cloth: new THREE.MeshStandardMaterial({ color: 0x3b3038, roughness: 1, flatShading: true }),
+  darkSteel: new THREE.MeshStandardMaterial({ color: 0x7c8794, roughness: 0.6, metalness: 0.5, flatShading: true }),
+  gold: new THREE.MeshStandardMaterial({ color: 0xd8b45c, roughness: 0.4, metalness: 0.7, flatShading: true }),
 };
 
 type Vec3 = [number, number, number];
+
+/**
+ * An axis-aligned box in the bone's own frame. Used instead of {@link segment}
+ * for armour, where which way the cross-section faces matters: segment() picks
+ * the rotation about its own axis for you, which is fine for a blade and wrong
+ * for a pauldron.
+ */
+function box(sx: number, sy: number, sz: number, x: number, y: number, z: number): THREE.BufferGeometry {
+  const g = new THREE.BoxGeometry(sx, sy, sz);
+  g.translate(x, y, z);
+  return g;
+}
 
 /** A box of cross-section `w` x `h` spanning `a` -> `b`. */
 function segment(a: Vec3, b: Vec3, w: number, h: number): THREE.BufferGeometry {
@@ -131,32 +154,159 @@ function makeBow() {
   return build(parts);
 }
 
-/** Built once and shared: every unit of a kind draws the same geometry. */
-const CACHE = new Map<WeaponKind, ReturnType<typeof build>>();
+/**
+ * Head and body kit, in the bone frames described above. For `head` and `spine`
+ * the bone runs straight up, so local +Y is up, +Z is the way the unit faces
+ * and +X is its left. The head bone is 0.4 long, so its tail — the crown of the
+ * skull — sits at y = 0.4.
+ */
 
-function asset(kind: WeaponKind) {
+/**
+ * Crested helm: the melee creep reads as armoured and front-heavy.
+ *
+ * Kept narrower than the skull on purpose. The camera looks down the lane at a
+ * 57 degree pitch, so a cap sized to the head is a plate covering the whole
+ * unit from above and the team colour underneath disappears. The crest does the
+ * identifying instead — a fore-and-aft ridge is exactly what stays readable
+ * from up there.
+ */
+function makeHelm() {
+  return build([
+    { geom: box(0.34, 0.12, 0.34, 0, 0.33, 0), mat: MATS.darkSteel },
+    // A brow that overhangs the face is most of what makes a box read as a helm.
+    { geom: box(0.36, 0.07, 0.1, 0, 0.26, 0.16), mat: MATS.darkSteel },
+    { geom: box(0.07, 0.17, 0.44, 0, 0.46, -0.02), mat: MATS.steel },
+  ]);
+}
+
+/** Peaked hood: the ranged creep reads as a robed caster, not a soldier. */
+function makeHood() {
+  return build([
+    { geom: box(0.36, 0.42, 0.16, 0, 0.24, -0.14), mat: MATS.cloth },
+    { geom: box(0.3, 0.26, 0.3, 0, 0.3, 0.0), mat: MATS.cloth },
+    // The peak leans forward, which is what separates a hood from a bucket.
+    { geom: box(0.12, 0.26, 0.18, 0, 0.5, 0.05), mat: MATS.cloth },
+  ]);
+}
+
+/** A three-pointed crown, so the hero is the tallest thing in the lane. */
+function makeCrown() {
+  const parts = [{ geom: box(0.4, 0.09, 0.4, 0, 0.3, 0), mat: MATS.gold }];
+  for (const x of [-0.15, 0, 0.15]) {
+    const h = x === 0 ? 0.3 : 0.2;
+    parts.push({ geom: box(0.07, h, 0.07, x, 0.34 + h / 2, -0.04), mat: MATS.gold });
+  }
+  return build(parts);
+}
+
+/** Pauldrons on the spine bone: width at the shoulder line. */
+function makePauldrons(big: boolean) {
+  const w = big ? 0.2 : 0.16;
+  const parts = [];
+  for (const x of [-1, 1]) {
+    parts.push({ geom: box(w, 0.13, 0.3, x * 0.3, 0.33, 0), mat: MATS.darkSteel });
+  }
+  return build(parts);
+}
+
+/** A cape hanging off the hero's back. Nothing else in the lane has one. */
+function makeCape() {
+  return build([
+    { geom: box(0.46, 0.72, 0.05, 0, 0.04, -0.21), mat: MATS.cloth },
+    { geom: box(0.5, 0.1, 0.1, 0, 0.36, -0.18), mat: MATS.leather },
+  ]);
+}
+
+/** A round-ish shield for the melee creep's off hand. */
+function makeShield() {
+  return build([
+    { geom: box(0.06, 0.4, 0.34, 0.06, 0, 0.04), mat: MATS.wood },
+    { geom: box(0.04, 0.44, 0.1, 0.07, 0, 0.04), mat: MATS.darkSteel },
+    { geom: box(0.05, 0.12, 0.12, 0.09, 0, 0.04), mat: MATS.steel },
+  ]);
+}
+
+type KitPart = 'sword' | 'bow' | 'helm' | 'hood' | 'crown' | 'pauldrons' | 'bigPauldrons' | 'cape' | 'shield';
+
+const MAKERS: Record<KitPart, () => ReturnType<typeof build>> = {
+  sword: makeSword,
+  bow: makeBow,
+  helm: makeHelm,
+  hood: makeHood,
+  crown: makeCrown,
+  pauldrons: () => makePauldrons(false),
+  bigPauldrons: () => makePauldrons(true),
+  cape: makeCape,
+  shield: makeShield,
+};
+
+/** Bone each part hangs on, and how far down that bone it sits. */
+const MOUNT: Record<KitPart, { bone: string; y: number }> = {
+  sword: { bone: HAND_BONE.sword, y: HAND_Y },
+  bow: { bone: HAND_BONE.bow, y: HAND_Y },
+  helm: { bone: 'head', y: 0 },
+  hood: { bone: 'head', y: 0 },
+  crown: { bone: 'head', y: 0 },
+  pauldrons: { bone: 'spine', y: 0 },
+  bigPauldrons: { bone: 'spine', y: 0 },
+  cape: { bone: 'spine', y: 0 },
+  shield: { bone: HAND_BONE.bow, y: HAND_Y },
+};
+
+/** Built once and shared: every unit of a kind draws the same geometry. */
+const CACHE = new Map<KitPart, ReturnType<typeof build>>();
+
+function asset(kind: KitPart) {
   let a = CACHE.get(kind);
   if (!a) {
-    a = kind === 'sword' ? makeSword() : makeBow();
+    a = MAKERS[kind]();
     CACHE.set(kind, a);
   }
   return a;
 }
 
 /**
- * Hang a weapon on `rig`'s hand bone. Returns false when the bone is missing,
- * which means the GLB was exported from a rig this code does not know.
+ * Hang one part on its bone. Returns false when the bone is missing, which
+ * means the GLB was exported from a rig this code does not know.
  */
-export function attachWeapon(rig: THREE.Object3D, kind: WeaponKind): boolean {
-  const bone = rig.getObjectByName(HAND_BONE[kind]);
+function attachPart(rig: THREE.Object3D, kind: KitPart): boolean {
+  const mount = MOUNT[kind];
+  const bone = rig.getObjectByName(mount.bone);
   if (!bone) return false;
 
-  const mesh = new THREE.Mesh(asset(kind).geometry, asset(kind).materials);
-  mesh.position.y = HAND_Y;
-  mesh.rotation.set(REST_POSE[kind].x, 0, REST_POSE[kind].z);
+  const a = asset(kind);
+  const mesh = new THREE.Mesh(a.geometry, a.materials);
+  mesh.position.y = mount.y;
+  const rest = REST_POSE[kind as WeaponKind];
+  if (rest) mesh.rotation.set(rest.x, 0, rest.z);
   mesh.castShadow = true;
-  // Weapons are deliberately not team-tinted: steel and wood are how you tell a
-  // sword from a bow at this camera distance, and tinting flattens both.
+  // Kit is deliberately not team-tinted: steel, wood and cloth are how you tell
+  // a swordsman from an archer at this camera distance, and tinting flattens
+  // every one of them back into the team colour the body already carries.
   bone.add(mesh);
   return true;
+}
+
+/** What each kind of unit wears. */
+function kitFor(kind: UnitKind, ranged: boolean): KitPart[] {
+  if (kind === 'hero') return [ranged ? 'bow' : 'sword', 'crown', 'bigPauldrons', 'cape'];
+  if (kind === 'ranged_creep') return ['bow', 'hood'];
+  // The siege creep is not drawn on this rig at all; see SiegeView.
+  if (kind === 'siege_creep') return [];
+  return ['sword', 'shield', 'helm', 'pauldrons'];
+}
+
+/**
+ * Dress `rig` for `unit`. Ranged/melee is read off the sim the same way
+ * everything else in the renderer is — a unit that spawns projectiles shoots,
+ * one that hits instantly swings.
+ *
+ * Returns false if the rig has no bones to hang anything on.
+ */
+export function attachKit(rig: THREE.Object3D, kind: UnitKind, projectileSpeed: number): boolean {
+  let ok = true;
+  for (const part of kitFor(kind, projectileSpeed > 0)) {
+    if (!attachPart(rig, part)) ok = false;
+  }
+  return ok;
 }

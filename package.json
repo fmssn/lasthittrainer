@@ -6,9 +6,14 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "shot": "node tools/shot.mjs",
+    "check": "node tools/simcheck.mjs",
+    "balance": "node tools/balance.mjs",
+    "pack": "node tools/pack-artifact.mjs"
   },
   "devDependencies": {
+    "playwright": "^1.63.0",
     "typescript": "^5.7.2",
     "vite": "^6.0.5"
   },

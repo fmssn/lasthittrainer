@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { Unit } from '../sim/types.ts';
 import { attackPointTime } from '../sim/constants.ts';
-import { attachWeapon } from './weapons.ts';
+import { attachKit } from './weapons.ts';
 
 /**
  * One animated unit on the 3D stage.
@@ -103,13 +103,11 @@ export class UnitView {
       }
     });
 
-    // Weapon follows from sim state like everything else here: a unit that
-    // spawns projectiles shoots, one that hits instantly swings. That covers
-    // creeps and heroes with the same rule — Juggernaut and a melee creep both
-    // get a sword, Sniper and a ranged creep both get a bow.
-    // Attached after the tint pass so steel and wood keep their own colours.
-    if (!attachWeapon(this.root, unit.projectileSpeed > 0 ? 'bow' : 'sword')) {
-      throw new Error('creep rig has no hand bone to attach a weapon to');
+    // Kit follows from sim state like everything else here: a unit that spawns
+    // projectiles shoots, one that hits instantly swings. Attached after the
+    // tint pass so steel, wood and cloth keep their own colours.
+    if (!attachKit(this.root, unit.kind, unit.projectileSpeed)) {
+      throw new Error('creep rig is missing the bones the unit kit mounts on');
     }
 
     this.mixer = new THREE.AnimationMixer(this.root);

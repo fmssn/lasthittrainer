@@ -1,17 +1,27 @@
-import type { FloatingText, KillEvent, Projectile, Team, Unit, Vec2 } from './types.ts';
+import type {
+  DamageEvent,
+  FloaterKind,
+  FloatingText,
+  KillEvent,
+  Projectile,
+  Team,
+  Unit,
+  Vec2,
+} from './types.ts';
 import {
-  ACQUISITION_RANGE,
   AGGRO_COOLDOWN,
   AGGRO_DURATION,
-  aggroTriggerRange,
   DENY_THRESHOLD,
   LANE_HALF_WIDTH,
-  LEASH_RANGE,
+  MELEE_CREEP_HERO_DAMAGE_PENALTY,
   SIEGE_EVERY_N_WAVES,
   WAVE_INTERVAL,
+  acquisitionRange,
   armorMultiplier,
+  attackBackswingTime,
   attackInterval,
   attackPointTime,
+  turnSpeed,
 } from './constants.ts';
 import { MELEE_CREEP, RANGED_CREEP, SIEGE_CREEP, TOWER, resetIds, rollDamage, spawnUnit } from './units.ts';
 import { heroById } from './heroes.ts';
@@ -25,15 +35,45 @@ export const RADIANT_SPAWN = 400;
 export const DIRE_SPAWN = 5600;
 export const LANE_CENTER = (RADIANT_SPAWN + DIRE_SPAWN) / 2;
 export const HERO_RESPAWN_TIME = 6;
-export const RADIANT_TOWER_X = 1700;
-export const DIRE_TOWER_X = 4300;
 
 /**
- * Angular speed. Dota's per-frame turn formula is not published; this is
- * calibrated so a 180 degree turn at turn rate 0.6 takes about a quarter
- * second, which is what it feels like in game.
+ * How much of a contact goes into sliding past rather than backing off.
+ *
+ * Worth being honest about what this does and does not buy. It fixes contact
+ * behaviour: without it two units meeting head-on grind along the lane locked
+ * together, because a pure normal shove gives neither of them a way around.
+ * What it does not buy is creep blocking in any meaningful sense — measured,
+ * one hero interposing costs a four-creep wave about 3% of its progress at any
+ * setting, because one body can only touch one creep and the front of the wave
+ * keeps changing. Real blocking happens on the narrow path out of the barracks,
+ * which this drill does not have: waves spawn into open lane.
  */
-const TURN_SPEED_SCALE = 20;
+const SLIDE = 0.45;
+
+/**
+ * How hard a unit is to shove. A hero outweighs a lane creep by enough to hold
+ * a line in front of one, and buildings do not budge.
+ */
+function pushMass(u: Unit): number {
+  if (u.moveSpeed <= 0) return Infinity;
+  return u.kind === 'hero' ? 3 : 1;
+}
+
+function floaterColor(kind: FloaterKind): string {
+  if (kind === 'player_damage') return '#ffd479';
+  if (kind === 'incoming_damage') return '#ff8b7a';
+  return '#b9c4cf';
+}
+export const RADIANT_TOWER_X = 1700;
+
+/**
+ * Phase timers are counted down by repeated subtraction of the fixed step, and
+ * 30 subtractions of 1/120 land a few times 10^-17 above zero rather than on
+ * it. Without a tolerance that residue costs an extra frame on every single
+ * swing, which is exactly the kind of error this app is supposed to not have.
+ */
+const TIMER_EPSILON = 1e-9;
+export const DIRE_TOWER_X = 4300;
 
 export interface Stats {
   lastHits: number;
@@ -58,6 +98,8 @@ export class World {
   projectiles: Projectile[] = [];
   floaters: FloatingText[] = [];
   killLog: KillEvent[] = [];
+  /** Landed attacks, newest last. Capped; consumers follow `seq`. */
+  damageLog: DamageEvent[] = [];
 
   player!: Unit;
   enemy: Unit | null = null;
@@ -82,6 +124,7 @@ export class World {
   };
 
   private nextProjectileId = 1;
+  private nextDamageSeq = 1;
   private enemyAi: EnemyHeroAi | null = null;
 
   constructor(config: DrillConfig) {
@@ -124,10 +167,24 @@ export class World {
     return out;
   }
 
-  /** Average damage this unit deals to that target after armor. */
+  /** Average damage this unit deals to that target, after armor and modifiers. */
   expectedDamage(source: Unit, target: Unit): number {
     const avg = (source.damageMin + source.damageMax) / 2;
-    return avg * armorMultiplier(target.armor);
+    return this.applyModifiers(source, target, avg);
+  }
+
+  /**
+   * Armor, plus every flat multiplier that sits between a rolled attack and the
+   * health bar. Today that is just `creep_irresolute`: melee lane creeps deal
+   * 25% less to heroes. It lives in one place so the damage preview, the bot's
+   * estimate and the actual hit can never disagree.
+   */
+  private applyModifiers(source: Unit, target: Unit, raw: number): number {
+    let dmg = raw * armorMultiplier(target.armor);
+    if (source.kind === 'melee_creep' && target.kind === 'hero') {
+      dmg *= 1 - MELEE_CREEP_HERO_DAMAGE_PENALTY;
+    }
+    return dmg;
   }
 
   /** How long until a swing started now would land on `target`. */
@@ -258,6 +315,33 @@ export class World {
   }
 
   /**
+   * Attack-move acquisition: the first valid enemy inside acquisition range is
+   * picked up while the unit travels, and when it dies the unit goes back to
+   * walking — `moveTarget` is deliberately left intact so the order outlives
+   * the kill, and on arrival the unit holds the spot and keeps swinging.
+   *
+   * Acquisition is not an order, so no aggro check runs here: attack-moving
+   * past a wave must not pull it, only a deliberate click on a hero does.
+   * Allies are never acquired either, which is what stops attack-move from
+   * denying your own creeps for you.
+   */
+  private acquireForAttackMove(u: Unit) {
+    let best: Unit | null = null;
+    let bestD = acquisitionRange(u.kind);
+    for (const o of this.units.values()) {
+      if (!o.alive || o.team === u.team) continue;
+      // The tower is invulnerable here, so walking into one is never the order.
+      if (o.kind === 'tower') continue;
+      const d = dist(u.pos, o.pos);
+      if (d < bestD) {
+        bestD = d;
+        best = o;
+      }
+    }
+    if (best) u.attackTargetId = best.id;
+  }
+
+  /**
    * The creep aggro check, run once per attack order a hero issues.
    *
    * Lane creeps rank the heroes near them by threat: one attacking the creep or
@@ -292,7 +376,7 @@ export class World {
     for (const u of this.units.values()) {
       if (!u.alive || u.kind === 'hero') continue;
       if (u.team === attacker.team) continue;
-      const radius = u.kind === 'tower' ? u.attackRange : aggroTriggerRange(u.kind);
+      const radius = acquisitionRange(u.kind);
       if (dist(u.pos, attacker.pos) > radius) continue;
 
       if (pull) {
@@ -341,6 +425,7 @@ export class World {
       if (u.aggroCooldown > 0) u.aggroCooldown -= dt;
       if (u.hp < u.maxHp) u.hp = Math.min(u.maxHp, u.hp + u.hpRegen * dt);
       if (u.kind !== 'hero') runCreepAi(this, u);
+      else if (u.attackMove && !this.get(u.attackTargetId)) this.acquireForAttackMove(u);
     }
 
     if (this.enemyAi && this.enemy?.alive) this.enemyAi.update(this, dt);
@@ -395,7 +480,7 @@ export class World {
 
   private turnToward(u: Unit, angle: number, dt: number) {
     const delta = angleDelta(u.facing, angle);
-    const max = u.turnRate * TURN_SPEED_SCALE * dt;
+    const max = turnSpeed(u.turnRate) * dt;
     u.facing += clamp(delta, -max, max);
   }
 
@@ -403,7 +488,13 @@ export class World {
     return Math.abs(angleDelta(u.facing, angleTo(u.pos, target.pos))) < 0.15;
   }
 
-  /** Keep units from stacking on one pixel. Cheap, not a real pathfinder. */
+  /**
+   * Keep units from stacking on one pixel. Cheap, not a real pathfinder.
+   *
+   * The split is by mass rather than evenly: a hero shouldered by a lane creep
+   * should barely move and the creep should go around, which an even split got
+   * backwards by sliding both aside equally.
+   */
   private separate() {
     const list = this.aliveUnits();
     for (let i = 0; i < list.length; i++) {
@@ -418,13 +509,28 @@ export class World {
         if (d >= min || d === 0) continue;
         const nx = dx / d;
         const ny = dy / d;
-        // Immobile units do not get shoved; the other one absorbs the whole push.
-        const aShare = a.moveSpeed <= 0 ? 0 : b.moveSpeed <= 0 ? 1 : 0.5;
+        // Each unit gives way in proportion to the *other's* mass, so the
+        // heavier one barely moves. Immobile units never move at all.
+        const ma = pushMass(a);
+        const mb = pushMass(b);
+        const aShare = !Number.isFinite(ma) ? 0 : !Number.isFinite(mb) ? 1 : mb / (ma + mb);
         const push = min - d;
-        a.pos.x -= nx * push * aShare;
-        a.pos.y -= ny * push * aShare;
-        b.pos.x += nx * push * (1 - aShare);
-        b.pos.y += ny * push * (1 - aShare);
+
+        // Tangential slide. A purely head-on shove lets one unit stall another
+        // indefinitely — the two just grind along the lane locked together —
+        // because nothing ever steps around. Dota's creeps path around what is
+        // in the way, so the contact also nudges them past each other. Which
+        // way is decided by id parity rather than the rng, so that separation
+        // stays deterministic without eating the seeded stream every frame.
+        const side = (a.id + b.id) % 2 === 0 ? 1 : -1;
+        const slide = push * SLIDE * side;
+        const tx = -ny * slide;
+        const ty = nx * slide;
+
+        a.pos.x -= (nx * push + tx) * aShare;
+        a.pos.y -= (ny * push + ty) * aShare;
+        b.pos.x += (nx * push + tx) * (1 - aShare);
+        b.pos.y += (ny * push + ty) * (1 - aShare);
         a.pos.y = clamp(a.pos.y, -LANE_HALF_WIDTH, LANE_HALF_WIDTH);
         b.pos.y = clamp(b.pos.y, -LANE_HALF_WIDTH, LANE_HALF_WIDTH);
       }
@@ -434,6 +540,19 @@ export class World {
   // ----------------------------------------------------------------- combat
 
   private updateCombat(u: Unit, dt: number) {
+    // The backswing is resolved first, and a swing that is ready to start may
+    // then cut it short in the same tick: the follow-through never gates the
+    // next attack, only the attack cooldown does.
+    if (u.phase === 'backswing') {
+      u.phaseTimer -= dt;
+      if (u.phaseTimer <= TIMER_EPSILON) {
+        u.phase = 'idle';
+        u.phaseTimer = 0;
+      }
+    }
+
+    if (u.phase !== 'windup') this.tryStartSwing(u, dt);
+
     if (u.phase === 'windup') {
       u.phaseTimer -= dt;
       const target = this.get(u.attackTargetId);
@@ -444,25 +563,32 @@ export class World {
         if (u.kind === 'hero') this.stats.wastedSwings += u.team === 'radiant' ? 1 : 0;
         return;
       }
-      u.facing = angleTo(u.pos, target.pos);
-      if (u.phaseTimer <= 0) {
+      // Rooted, but still tracking: a unit keeps turning onto its target
+      // through the wind-up, at its own turn rate rather than snapping.
+      this.turnToward(u, angleTo(u.pos, target.pos), dt);
+      if (u.phaseTimer <= TIMER_EPSILON) {
         this.releaseAttack(u, target);
         u.phase = 'backswing';
-        u.phaseTimer = u.attackBackswing / (1 + u.attackSpeedBonus / 100);
+        u.phaseTimer = attackBackswingTime(u.attackBackswing, u.attackSpeedBonus);
       }
-      return;
     }
+  }
 
-    if (u.phase === 'backswing') {
-      u.phaseTimer -= dt;
-      if (u.phaseTimer <= 0) u.phase = 'idle';
-    }
-
+  /**
+   * Begin a swing if everything lines up. Deliberately called before the
+   * wind-up is ticked, so the tick that decides to attack is also the first
+   * tick of the attack point — otherwise every swing in the game would land a
+   * frame late, and at 1/120 that is a whole frame of borrowed time on a
+   * timing the drill exists to teach.
+   */
+  private tryStartSwing(u: Unit, dt: number) {
     const target = this.get(u.attackTargetId);
     if (!target) return;
-    if (u.attackCooldown > 0) return;
+    if (u.attackCooldown > TIMER_EPSILON) return;
     if (!this.inAttackRange(u, target)) return;
 
+    // Turning happens on the clock, not for free: a unit that has to come
+    // about spends real time doing it before the wind-up can start.
     if (!this.facingTarget(u, target)) {
       this.turnToward(u, angleTo(u.pos, target.pos), dt);
       return;
@@ -475,7 +601,7 @@ export class World {
 
   private releaseAttack(source: Unit, target: Unit) {
     const raw = rollDamage(source, this.rng);
-    const dmg = raw * armorMultiplier(target.armor);
+    const dmg = this.applyModifiers(source, target, raw);
 
     if (source.projectileSpeed <= 0) {
       this.applyDamage(source, target, dmg);
@@ -510,7 +636,7 @@ export class World {
       if (step >= d) {
         target.incomingDamage = Math.max(0, target.incomingDamage - p.damage);
         this.projectiles.splice(i, 1);
-        if (source) this.applyDamage(source, target, p.damage);
+        if (source) this.applyDamage(source, target, p.damage, true);
         continue;
       }
       const a = angleTo(p.pos, target.pos);
@@ -519,18 +645,35 @@ export class World {
     }
   }
 
-  private applyDamage(source: Unit, target: Unit, dmg: number) {
+  private applyDamage(source: Unit, target: Unit, dmg: number, ranged = false) {
     if (!target.alive) return;
     if (target.kind === 'tower') return;
     target.hp -= dmg;
-    this.pushFloater(target.pos, `-${Math.round(dmg)}`, source.kind === 'hero' ? '#ffd479' : '#b9c4cf');
 
-    // Creeps retaliate against enemy *creeps* that hit them. A hero attacking a
-    // creep draws no aggro in Dota — only an attack order on a hero does, which
-    // is handled by runAggroCheck.
-    if (target.kind !== 'hero' && source.kind !== 'hero' && target.team !== source.team && !target.aggroTargetId) {
-      if (!this.get(target.attackTargetId)) target.attackTargetId = source.id;
-    }
+    this.damageLog.push({
+      seq: this.nextDamageSeq++,
+      pos: { x: target.pos.x, y: target.pos.y },
+      targetId: target.id,
+      sourceKind: source.kind,
+      sourceTeam: source.team,
+      ranged,
+      amount: dmg,
+      lethal: target.hp <= 0,
+    });
+    if (this.damageLog.length > 256) this.damageLog.splice(0, this.damageLog.length - 256);
+
+    const kind: FloaterKind =
+      source.id === this.player.id
+        ? 'player_damage'
+        : target.id === this.player.id
+          ? 'incoming_damage'
+          : 'creep_damage';
+    this.pushFloater(target.pos, `-${Math.round(dmg)}`, floaterColor(kind), kind);
+
+    // No retaliation hook here on purpose. Being hit is not what makes a creep
+    // look at you in Dota — acquisition range and the forced-aggro check are,
+    // and creepAi runs both every tick. A "hit me, so I hit you" rule on top of
+    // that would have creeps turning on things their own AI never acquired.
 
     if (target.hp <= 0) this.kill(source, target);
   }
@@ -555,7 +698,7 @@ export class World {
       if (byPlayer) {
         this.stats.lastHits++;
         this.stats.gold += gold;
-        this.pushFloater(victim.pos, `+${gold}`, '#f2c94c');
+        this.pushFloater(victim.pos, `+${gold}`, '#f2c94c', 'gold');
       } else if (byEnemy) {
         this.stats.enemyLastHits++;
       }
@@ -564,7 +707,7 @@ export class World {
     } else {
       if (byPlayer) {
         this.stats.denies++;
-        this.pushFloater(victim.pos, 'DENY', '#7fd6a2');
+        this.pushFloater(victim.pos, 'DENY', '#7fd6a2', 'deny');
       } else if (byEnemy) {
         this.stats.enemyDenies++;
       }
@@ -629,11 +772,15 @@ export class World {
 
   // --------------------------------------------------------------- floaters
 
-  pushFloater(pos: Vec2, text: string, color: string) {
+  pushFloater(pos: Vec2, text: string, color: string, kind: FloaterKind = 'creep_damage') {
     this.floaters.push({
-      pos: { x: pos.x + (this.rng() - 0.5) * 20, y: pos.y - 20 },
+      // Spread wider than a body: several creeps trading in a clump produce
+      // numbers on the same pixel otherwise, and two overlaid numbers read as
+      // one wrong one.
+      pos: { x: pos.x + (this.rng() - 0.5) * 60, y: pos.y - 20 + (this.rng() - 0.5) * 30 },
       text,
       color,
+      kind,
       age: 0,
       life: 0.9,
       rise: 46,
@@ -679,7 +826,7 @@ export class World {
     return best;
   }
 
-  nearestEnemy(u: Unit, range = ACQUISITION_RANGE): Unit | null {
+  nearestEnemy(u: Unit, range = acquisitionRange(u.kind)): Unit | null {
     let best: Unit | null = null;
     let bestD = range;
     for (const o of this.units.values()) {
@@ -691,9 +838,5 @@ export class World {
       }
     }
     return best;
-  }
-
-  withinLeash(u: Unit, target: Unit): boolean {
-    return dist(u.pos, target.pos) <= LEASH_RANGE;
   }
 }

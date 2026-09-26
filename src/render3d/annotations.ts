@@ -1,17 +1,24 @@
 import * as THREE from 'three';
 import type { Unit, Vec2 } from '../sim/types.ts';
 import type { World } from '../sim/world.ts';
-import { DENY_THRESHOLD, attackPointTime } from '../sim/constants.ts';
+import { AGGRO_DURATION, DENY_THRESHOLD, attackPointTime } from '../sim/constants.ts';
 import { clamp } from '../sim/math.ts';
 import { isPlayerTarget } from './targetAids.ts';
+import { healthBarHeight } from './appearance.ts';
 
 /**
  * The screen-space layer of the 3D renderer.
  *
- * Health bars, the deny line, the damage preview and the windup arc are read
- * at a glance mid-swing, so they must not shrink or tilt with the stage. They
- * are drawn on a 2D canvas over the WebGL one, at positions projected through
- * the same camera — the 3D stage stays the world, this stays the instrument.
+ * Health bars, the deny line, the damage preview and the windup arc are read at
+ * a glance mid-swing, so they must not shrink or tilt with the stage. They are
+ * drawn on a 2D canvas over the WebGL one, at positions projected through the
+ * same camera — the 3D stage stays the world, this stays the instrument.
+ *
+ * Everything here is sized in screen pixels and anchored to
+ * {@link healthBarHeight}, so a bar sits on its owner's head at any zoom and
+ * stays legible at any distance. That is Dota's own choice: health bars are the
+ * one part of the scene that must never get smaller when you zoom out, because
+ * they are what you are actually reading when you decide to swing.
  */
 
 const COLORS = {
@@ -20,15 +27,13 @@ const COLORS = {
   killable: '#ffd479',
   deny: '#7fd6a2',
   text: '#e6edf3',
+  shadow: 'rgba(0,0,0,0.85)',
 };
 
-/** Where the health bar hangs, in sim units above the feet. */
-const HEAD_HEIGHT: Record<string, number> = {
-  melee_creep: 112,
-  ranged_creep: 100,
-  siege_creep: 140,
-  hero: 165,
-  tower: 300,
+/** Bar geometry in screen pixels, per unit class. */
+const BAR = {
+  creep: { w: 36, h: 5 },
+  hero: { w: 62, h: 8 },
 };
 
 export class Annotations {
@@ -71,6 +76,11 @@ export class Annotations {
     return { x: (this.v.x * 0.5 + 0.5) * this.w, y: (-this.v.y * 0.5 + 0.5) * this.h };
   }
 
+  /** True when the point is behind the camera, where projection folds over. */
+  private behind(): boolean {
+    return this.v.z > 1;
+  }
+
   /**
    * Pixels per sim unit near `p`. Not one number for the frame: under a
    * perspective camera a unit at the far end of the lane is smaller than one
@@ -91,11 +101,10 @@ export class Annotations {
     // Far units first, so a near health bar wins the overlap.
     const sorted = world.aliveUnits().sort((a, b) => a.pos.y - b.pos.y);
     for (const u of sorted) {
-      if (u.phase === 'windup') this.drawWindup(u);
-      if (u.kind !== 'tower') this.drawHealthBar(world, u, hoverId);
+      if (u.phase === 'windup') this.drawWindup(world, u);
       if (u.aggroTimer > 0) this.drawAggro(u);
+      if (u.kind !== 'tower') this.drawHealthBar(world, u, hoverId);
     }
-    this.drawPlayerLabel(world);
     this.drawFloaters(world);
 
     ctx.restore();
@@ -105,67 +114,84 @@ export class Annotations {
 
   private drawHealthBar(world: World, u: Unit, hoverId: number | null) {
     const ctx = this.ctx;
-    const head = this.project(u.pos, HEAD_HEIGHT[u.kind] ?? 110);
-    const w = u.kind === 'hero' ? 58 : 38;
-    const h = u.kind === 'hero' ? 7 : 5;
-    const x = head.x - w / 2;
-    const y = head.y - h - 4;
+    const head = this.project(u.pos, healthBarHeight(u));
+    if (this.behind()) return;
+
+    const hero = u.kind === 'hero';
+    const { w, h } = hero ? BAR.hero : BAR.creep;
+    const x = Math.round(head.x - w / 2);
+    const y = Math.round(head.y - h);
     const frac = clamp(u.hp / u.maxHp, 0, 1);
 
-    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    // A creep you could kill right now gets a gold frame. This is the single
+    // most useful thing on screen while last hitting, so it is a property of
+    // the bar rather than something to hunt for on the ground.
+    const killable =
+      world.config.showKillableHighlight &&
+      !hero &&
+      world.player.alive &&
+      isPlayerTarget(world, u) &&
+      world.shouldSwingNow(world.player, u);
+
+    ctx.fillStyle = COLORS.shadow;
     ctx.fillRect(x - 1, y - 1, w + 2, h + 2);
     ctx.fillStyle = u.team === 'radiant' ? COLORS.radiant : COLORS.dire;
-    ctx.fillRect(x, y, w * frac, h);
+    ctx.fillRect(x, y, Math.round(w * frac), h);
 
-    // Incoming projectile damage, as a lighter chunk at the end of the bar.
+    // Damage already in the air, as a pale chunk at the leading edge: what the
+    // bar will read once everything in flight lands.
     if (u.incomingDamage > 0) {
       const after = clamp((u.hp - u.incomingDamage) / u.maxHp, 0, 1);
-      ctx.fillStyle = 'rgba(255,255,255,0.35)';
-      ctx.fillRect(x + w * after, y, w * (frac - after), h);
+      ctx.fillStyle = 'rgba(255,255,255,0.4)';
+      ctx.fillRect(x + w * after, y, Math.max(1, w * (frac - after)), h);
     }
 
-    // The 50% deny line. Drawing it on every bar is the whole point.
-    if (u.kind !== 'hero') {
-      ctx.fillStyle = frac <= DENY_THRESHOLD ? COLORS.deny : 'rgba(255,255,255,0.45)';
-      ctx.fillRect(x + w * DENY_THRESHOLD - 1, y - 2, 2, h + 4);
+    if (!hero) {
+      // The 50% deny line, on every creep bar. Drawing it always is the point:
+      // the threshold has to become something you see rather than compute.
+      const dx = Math.round(x + w * DENY_THRESHOLD);
+      ctx.fillStyle = frac <= DENY_THRESHOLD ? COLORS.deny : 'rgba(255,255,255,0.5)';
+      ctx.fillRect(dx, y - 2, 1, h + 4);
     }
 
-    // What your next hit would leave it on.
-    if (
-      world.config.showDamagePreview &&
-      u.kind !== 'hero' &&
-      world.player.alive &&
-      isPlayerTarget(world, u)
-    ) {
+    // Where your next hit would leave it, as a notch on the bar.
+    if (world.config.showDamagePreview && !hero && world.player.alive && isPlayerTarget(world, u)) {
       const dmg = world.expectedDamage(world.player, u);
       const after = clamp((world.hpAtLanding(world.player, u) - dmg) / u.maxHp, 0, 1);
-      ctx.strokeStyle = COLORS.killable;
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(x + w * after, y - 3);
-      ctx.lineTo(x + w * after, y + h + 3);
-      ctx.stroke();
+      ctx.fillStyle = COLORS.killable;
+      ctx.fillRect(Math.round(x + w * after) - 1, y - 3, 2, h + 6);
     }
 
-    if (hoverId === u.id && u.kind !== 'hero') {
-      ctx.fillStyle = COLORS.text;
-      ctx.font = '600 11px Barlow, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(`${Math.ceil(u.hp)} / ${u.maxHp}`, head.x, y - 6);
+    if (killable) {
+      ctx.strokeStyle = COLORS.killable;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x - 2.5, y - 2.5, w + 5, h + 5);
+    }
+
+    if (hoverId === u.id) {
+      this.label(`${Math.ceil(u.hp)} / ${Math.round(u.maxHp)}`, head.x, y - 7, COLORS.text, 11);
     }
   }
 
   // ------------------------------------------------------------------- swing
 
-  /** A shrinking arc showing exactly how much wind-up is left. */
-  private drawWindup(u: Unit) {
+  /**
+   * A shrinking arc showing exactly how much wind-up is left.
+   *
+   * The player's own swing is drawn bright and thick because it is the thing
+   * being trained; everyone else's is faint, so a wave mid-fight does not turn
+   * into a screen full of rings.
+   */
+  private drawWindup(world: World, u: Unit) {
     const ctx = this.ctx;
-    const s = this.project(u.pos);
-    const r = Math.max(10, u.radius * this.pxPerUnitAt(u.pos) + 6);
+    const s = this.project(u.pos, 10);
+    if (this.behind()) return;
+    const mine = u.id === world.player.id;
+    const r = Math.max(10, u.radius * this.pxPerUnitAt(u.pos) + (mine ? 16 : 10));
     const total = attackPointTime(u.attackPoint, u.attackSpeedBonus);
     const p = clamp(1 - u.phaseTimer / total, 0, 1);
-    ctx.strokeStyle = u.kind === 'hero' ? COLORS.killable : 'rgba(255,255,255,0.55)';
-    ctx.lineWidth = 3;
+    ctx.strokeStyle = mine ? COLORS.killable : 'rgba(255,255,255,0.3)';
+    ctx.lineWidth = mine ? 3 : 1.5;
     ctx.beginPath();
     ctx.arc(s.x, s.y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * p);
     ctx.stroke();
@@ -174,24 +200,16 @@ export class Annotations {
   /** Forced aggro: these creeps are coming for you. */
   private drawAggro(u: Unit) {
     const ctx = this.ctx;
-    const s = this.project(u.pos);
-    const r = Math.max(8, u.radius * this.pxPerUnitAt(u.pos) + 2);
+    const s = this.project(u.pos, 10);
+    if (this.behind()) return;
+    const r = Math.max(9, u.radius * this.pxPerUnitAt(u.pos) + 7);
     ctx.strokeStyle = '#ff9f43';
     ctx.lineWidth = 2;
-    ctx.globalAlpha = 0.8;
+    ctx.globalAlpha = 0.85;
     ctx.beginPath();
-    ctx.arc(s.x, s.y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (u.aggroTimer / 2.3));
+    ctx.arc(s.x, s.y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (u.aggroTimer / AGGRO_DURATION));
     ctx.stroke();
     ctx.globalAlpha = 1;
-  }
-
-  private drawPlayerLabel(world: World) {
-    if (!world.player.alive) return;
-    const s = this.project(world.player.pos, HEAD_HEIGHT.hero + 26);
-    this.ctx.fillStyle = COLORS.text;
-    this.ctx.font = '600 12px Barlow, sans-serif';
-    this.ctx.textAlign = 'center';
-    this.ctx.fillText('YOU', s.x, s.y);
   }
 
   private drawOrderLine(world: World) {
@@ -200,7 +218,7 @@ export class Annotations {
     const a = this.project(world.player.pos, 40);
     const b = this.project(target.pos, 40);
     const ctx = this.ctx;
-    ctx.strokeStyle = 'rgba(255,212,121,0.3)';
+    ctx.strokeStyle = 'rgba(255,212,121,0.28)';
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 6]);
     ctx.beginPath();
@@ -211,20 +229,38 @@ export class Annotations {
   }
 
   private drawFloaters(world: World) {
-    const ctx = this.ctx;
-    ctx.textAlign = 'center';
     for (const f of world.floaters) {
-      // The sim drifts floaters along -y, which reads as "up" on the 2D canvas
+      // Creeps trading blows produce a number per hit per creep. Dota shows
+      // none of them, and neither does this: what is worth reading is your own
+      // damage, what is landing on you, and gold.
+      if (f.kind === 'creep_damage') continue;
+      // The sim drifts floaters along -y, which reads as "up" on a 2D canvas
       // but as "sideways across the lane" here. Undo that drift and spend it on
       // world height instead, so the text climbs off the unit's head in 3D.
       const drift = f.rise * f.age;
       const s = this.project({ x: f.pos.x, y: f.pos.y + drift }, 150 + drift);
-      ctx.globalAlpha = clamp(1 - f.age / f.life, 0, 1);
-      ctx.fillStyle = f.color;
-      ctx.font =
-        f.text === 'DENY' ? '700 16px "Barlow Condensed", sans-serif' : '600 13px Barlow, sans-serif';
-      ctx.fillText(f.text, s.x, s.y);
+      if (this.behind()) continue;
+      const big = f.kind === 'gold' || f.kind === 'deny';
+      this.ctx.globalAlpha = clamp(1 - f.age / f.life, 0, 1);
+      this.label(f.text, s.x, s.y, f.color, big ? 16 : 12, big);
     }
-    ctx.globalAlpha = 1;
+    this.ctx.globalAlpha = 1;
+  }
+
+  /**
+   * Text with a dark outline. Everything here is drawn over a lane that is
+   * sometimes pale grass and sometimes a creep, so plain fill text disappears
+   * about half the time.
+   */
+  private label(text: string, x: number, y: number, color: string, size: number, bold = false) {
+    const ctx = this.ctx;
+    ctx.font = `${bold ? 700 : 600} ${size}px ${bold ? '"Barlow Condensed", ' : ''}Barlow, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = COLORS.shadow;
+    ctx.strokeText(text, x, y);
+    ctx.fillStyle = color;
+    ctx.fillText(text, x, y);
   }
 }

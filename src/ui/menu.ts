@@ -1,6 +1,6 @@
 import { HEROES, heroById } from '../sim/heroes.ts';
 import { DEFAULT_CONFIG, type DrillConfig } from '../sim/config.ts';
-import { attackInterval } from '../sim/constants.ts';
+import { attackInterval, attackPointTime } from '../sim/constants.ts';
 import { loadRuns, type RunRecord } from '../stats.ts';
 
 const DURATIONS = [60, 120, 180, 300];
@@ -18,8 +18,7 @@ export class Menu {
     root: HTMLElement,
     private onStart: (config: DrillConfig) => void,
   ) {
-    const saved = localStorage.getItem('lht.config');
-    this.config = { ...DEFAULT_CONFIG, ...(saved ? safeParse(saved) : {}) };
+    this.config = { ...DEFAULT_CONFIG, ...loadConfig() };
     this.el = document.createElement('div');
     this.el.className = 'screen menu';
     root.appendChild(this.el);
@@ -37,7 +36,7 @@ export class Menu {
 
   private set<K extends keyof DrillConfig>(key: K, value: DrillConfig[K]) {
     this.config[key] = value;
-    localStorage.setItem('lht.config', JSON.stringify(this.config));
+    saveConfig(this.config);
     this.render();
   }
 
@@ -56,14 +55,18 @@ export class Menu {
           <h2>Hero</h2>
           <div class="hero-grid">
             ${HEROES.map((h) => {
-              const interval = attackInterval(h.baseAttackTime, 0).toFixed(2);
+              // Effective, not authored. Agility divides both the interval and
+              // the wind-up, so quoting the raw numbers off the hero file tells
+              // you a swing is slower than the one you are about to make.
+              const interval = attackInterval(h.baseAttackTime, h.attackSpeedBonus).toFixed(2);
+              const point = attackPointTime(h.attackPoint, h.attackSpeedBonus).toFixed(2);
               return `
               <button class="hero-card ${h.id === c.heroId ? 'selected' : ''}" data-hero="${h.id}">
                 <span class="hero-dot" style="background:${h.color}"></span>
                 <span class="hero-name">${h.name}</span>
                 <span class="hero-pips" title="timing difficulty">${pips(h.difficulty)}</span>
                 <span class="hero-stats">
-                  ${h.attackRange} range · ${h.attackPoint}s point · ${interval}s attack
+                  ${h.attackRange} range · ${point}s point · ${interval}s attack
                   ${h.projectileSpeed ? ` · ${h.projectileSpeed} proj` : ' · melee'}
                 </span>
                 <span class="hero-note">${h.note}</span>
@@ -196,10 +199,25 @@ function runRow(r: RunRecord): string {
   </div>`;
 }
 
-function safeParse(s: string): Partial<DrillConfig> {
+/**
+ * Reading localStorage does not merely return null when it is unavailable — in
+ * a private window, or with site data blocked, the accessor itself throws. The
+ * menu has to come up on defaults in that case rather than take the whole app
+ * down before the renderer is even built.
+ */
+function loadConfig(): Partial<DrillConfig> {
   try {
-    return JSON.parse(s) as Partial<DrillConfig>;
+    const saved = localStorage.getItem('lht.config');
+    return saved ? (JSON.parse(saved) as Partial<DrillConfig>) : {};
   } catch {
     return {};
+  }
+}
+
+function saveConfig(config: DrillConfig) {
+  try {
+    localStorage.setItem('lht.config', JSON.stringify(config));
+  } catch {
+    // Storage full or blocked. The setting still applies to this session.
   }
 }

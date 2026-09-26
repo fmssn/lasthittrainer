@@ -1,7 +1,7 @@
 import type { Team, Unit } from '../types.ts';
 import type { World } from '../world.ts';
 import type { EnemyProfile } from '../config.ts';
-import { DENY_THRESHOLD, aggroTriggerRange, armorMultiplier } from '../constants.ts';
+import { DENY_THRESHOLD, acquisitionRange } from '../constants.ts';
 import { angleTo, dist } from '../math.ts';
 
 interface Memory {
@@ -39,6 +39,13 @@ export class EnemyHeroAi {
   update(world: World, dt: number) {
     this.harassCooldown -= dt;
     this.prune(world);
+
+    // A swing under way is a commitment. Without this the bot re-evaluates
+    // every tick, and its own move orders — approach() and hold() both issue
+    // one — cancel the wind-up they interrupt. It would lose last hits to its
+    // own indecision in a way no player ever does, and it would do it most
+    // often at exactly the moment a creep is about to drop.
+    if (this.hero.phase === 'windup') return;
 
     // Back off while creeps are actually chewing on it, not on a flat HP rule —
     // a bot that sits in the fountain waiting to heal is no sparring partner.
@@ -83,7 +90,7 @@ export class EnemyHeroAi {
       if (team === this.own && u.hp > u.maxHp * DENY_THRESHOLD) continue;
 
       const mem = this.remember(u.id, world);
-      const damage = this.estimatedDamage(u);
+      const damage = this.estimatedDamage(world, u);
       const hp = this.projectedHp(world, u);
 
       if (hp <= 0 || hp > damage) {
@@ -107,8 +114,8 @@ export class EnemyHeroAi {
     return world.hpAtLanding(this.hero, creep);
   }
 
-  private estimatedDamage(creep: Unit): number {
-    const avg = ((this.hero.damageMin + this.hero.damageMax) / 2) * armorMultiplier(creep.armor);
+  private estimatedDamage(world: World, creep: Unit): number {
+    const avg = world.expectedDamage(this.hero, creep);
     // A weaker bot both over- and under-estimates; the error is signed per creep.
     const mem = this.memory.get(creep.id);
     const bias = mem ? (mem.skip ? -1 : 1) : 1;
@@ -157,7 +164,7 @@ export class EnemyHeroAi {
     let nearby = 0;
     for (const u of world.units.values()) {
       if (!u.alive || u.kind !== 'melee_creep' || u.team === this.own) continue;
-      if (dist(u.pos, this.hero.pos) <= aggroTriggerRange(u.kind)) nearby++;
+      if (dist(u.pos, this.hero.pos) <= acquisitionRange(u.kind)) nearby++;
     }
     if (nearby >= 2) {
       this.harassCooldown = 2;
