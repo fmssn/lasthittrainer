@@ -55,7 +55,9 @@ const rows = await page.evaluate(
           seed,
         });
         const me = new EnemyHeroAi(w.player, ENEMY_PROFILES[3]);
-        for (let i = 0; i < minutes * 60 * 120 && !w.finished; i++) {
+        // On the game clock, which starts at minus the countdown, so the
+        // window is the same three minutes of lane either way.
+        while (w.time < minutes * 60 && !w.finished) {
           if (w.player.alive) me.update(w, 1 / 120);
           w.step(1 / 120);
         }

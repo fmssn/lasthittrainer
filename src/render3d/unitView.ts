@@ -41,6 +41,20 @@ const STATURE_JOINT = 'head';
 const WALK_EPSILON = 12;
 
 /**
+ * Walk clip rate at a unit's full move speed: the rate it was animated at.
+ *
+ * The walk used to be foot-locked. A creep's Running_A was played at whatever
+ * rate kept its planted foot still at 325, which came to 1.86x, and a hero's
+ * walk at 305 / 240 = 1.27x. The rigs are small for the distances Dota moves
+ * them, so a planted foot needs that many steps a second, and playtesters
+ * found the legs frantic. So the feet slide a little instead, and the stride
+ * reads at the pace it was animated for. Slower than full speed (squeezing
+ * past a wavemate) slows the clip in proportion, down to the minimum.
+ */
+const WALK_CADENCE_MAX = 1;
+const WALK_CADENCE_MIN = 0.5;
+
+/**
  * Seconds of travel averaged into one speed reading.
  *
  * The sim only moves on its fixed 1/120 s step, so at render rates at or above
@@ -60,11 +74,6 @@ export interface CreepAsset {
   scale: number;
   /** Seconds into Attack where the blow lands. */
   hitTime: number;
-  /**
-   * File units per second the Walk clip covers at time scale 1. Null for a
-   * hero, whose walk keeps a cadence tuned by eye.
-   */
-  groundSpeed: number | null;
   /**
    * A hero model: only its `Team` material takes the tint. Everything else on
    * it is authored colour, and tinting skin and steel with the team colour is
@@ -142,17 +151,15 @@ export async function loadHero(url: string): Promise<CreepAsset> {
     clips: gltf.animations,
     scale: MODEL_SCALE,
     hitTime,
-    // The walk was not authored against a measured stride, so it keeps a
-    // cadence rule tuned by eye.
-    groundSpeed: null,
     teamTint: true,
   };
 }
 
 /**
- * A KayKit creep from tools/blender/build_units.py. Its contact time and stride
- * come from the clips' glTF extras; without them the swing would land visibly
- * early or late and the walk would skate, so a file missing either is refused.
+ * A KayKit creep from tools/blender/build_units.py. Its contact time comes from
+ * the Attack clip's glTF extras; without it the swing would land visibly early
+ * or late, so a file missing it is refused. The Walk clip's `groundSpeed` extra
+ * is still written but no longer read: see {@link WALK_CADENCE_MAX}.
  */
 export async function loadKayKitCreep(url: string): Promise<CreepAsset> {
   const gltf = await loadGltf(url);
@@ -166,13 +173,6 @@ export async function loadKayKitCreep(url: string): Promise<CreepAsset> {
         `in its glTF extras, got ${JSON.stringify(attack.userData.hitTime)}`,
     );
   }
-  const groundSpeed = extra(clip('Walk'), 'groundSpeed');
-  if (groundSpeed === null || groundSpeed <= 0) {
-    throw new Error(
-      `${name(url)}: Walk needs a positive groundSpeed in its glTF extras, ` +
-        `got ${JSON.stringify(clip('Walk').userData.groundSpeed)}`,
-    );
-  }
 
   gltf.scene.updateMatrixWorld(true);
   const joint = gltf.scene.getObjectByName(STATURE_JOINT);
@@ -184,7 +184,6 @@ export async function loadKayKitCreep(url: string): Promise<CreepAsset> {
     clips: gltf.animations,
     scale: KAYKIT_STATURE / stature,
     hitTime,
-    groundSpeed,
     teamTint: false,
   };
 }
@@ -223,7 +222,6 @@ export class UnitView {
   private actions = new Map<ClipName, THREE.AnimationAction>();
   private current: ClipName = 'Idle';
   private readonly hitTime: number;
-  private readonly groundSpeed: number | null;
 
   /** Phase seen last frame, so a new swing is detected as a transition. */
   private prevPhase: Unit['phase'] = 'idle';
@@ -239,7 +237,6 @@ export class UnitView {
     this.root = cloneSkinned(asset.scene) as THREE.Group;
     this.root.scale.setScalar(asset.scale);
     this.hitTime = asset.hitTime;
-    this.groundSpeed = asset.groundSpeed;
 
     this.root.traverse((o) => {
       if (!(o instanceof THREE.Mesh)) return;
@@ -336,13 +333,7 @@ export class UnitView {
       // Cancelled or finished: 0.12s out is quick enough to read as an
       // interrupted swing without snapping.
       if (this.speed > WALK_EPSILON) {
-        // A hero is deliberately not foot-locked: its walk was never measured
-        // for stride, so it scales, clamps and accepts the slide. A KayKit
-        // rig knows its own stride and runs (Running_A), so at 325 its feet stay
-        // about planted: 1.86x for the melee creep, and the ranged one, drawn
-        // at 0.88, just over the clamp. The scale includes that per-kind nudge.
-        const stride = this.groundSpeed === null ? 240 : this.groundSpeed * this.root.scale.x;
-        const cadence = THREE.MathUtils.clamp(this.speed / stride, 0.7, 2.0);
+        const cadence = THREE.MathUtils.clamp(this.speed / unit.moveSpeed, WALK_CADENCE_MIN, WALK_CADENCE_MAX);
         this.play('Walk', 0.12, cadence);
         this.actions.get('Walk')!.timeScale = cadence;
       } else {

@@ -234,7 +234,7 @@ export class Renderer3D {
     return best;
   }
 
-  /** Zoom by mouse-wheel notches, positive out. */
+  /** Zoom by mouse-wheel notches, positive out. The drill's camera is fixed; this is for the debug page. */
   zoom(notches: number) {
     this.stage.zoom(notches);
   }
