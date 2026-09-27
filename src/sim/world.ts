@@ -38,7 +38,7 @@ import { heroById } from './heroes.ts';
 import { legalLoadout, type ItemId } from './items.ts';
 import { angleDelta, angleTo, clamp, dist, makeRng } from './math.ts';
 import type { DrillConfig } from './config.ts';
-import { ENEMY_PROFILES } from './config.ts';
+import { ENEMY_PROFILES, START_COUNTDOWN } from './config.ts';
 import { runCreepAi } from './ai/creepAi.ts';
 import { EnemyHeroAi } from './ai/enemyHeroAi.ts';
 
@@ -72,6 +72,9 @@ export const RADIANT_TOWER_X = 1700;
 const TIMER_EPSILON = 1e-9;
 export const DIRE_TOWER_X = 4300;
 
+/** How far behind its own tower, towards its base, each hero starts. */
+const HERO_START_BEHIND_TOWER = 200;
+
 export interface Stats {
   lastHits: number;
   denies: number;
@@ -104,8 +107,9 @@ export class World {
   player!: Unit;
   enemy: Unit | null = null;
 
-  time = 0;
-  waveTimer = 0;
+  /** The game clock: negative until the first wave leaves, at 0:00. */
+  time = -START_COUNTDOWN;
+  waveTimer = START_COUNTDOWN;
   waveCount = 0;
   finished = false;
 
@@ -139,13 +143,15 @@ export class World {
 
     const items = legalLoadout(config.items);
     const heroTpl = heroById(config.heroId, items);
-    this.player = spawnUnit(heroTpl, 'radiant', { x: LANE_CENTER - 480, y: 0 }, this.rng);
+    // Behind your own tier 1, the way a lane starts in Dota, so the first wave
+    // is walked up to rather than dropped in on.
+    this.player = spawnUnit(heroTpl, 'radiant', { x: RADIANT_TOWER_X - HERO_START_BEHIND_TOWER, y: 0 }, this.rng);
     this.units.set(this.player.id, this.player);
     this.loadouts.set(this.player.id, { heroId: config.heroId, items });
 
     if (config.enemyHero) {
       const enemyTpl = heroById(config.enemyHeroId);
-      this.enemy = spawnUnit(enemyTpl, 'dire', { x: LANE_CENTER + 480, y: 0 }, this.rng);
+      this.enemy = spawnUnit(enemyTpl, 'dire', { x: DIRE_TOWER_X + HERO_START_BEHIND_TOWER, y: 0 }, this.rng);
       this.units.set(this.enemy.id, this.enemy);
       this.loadouts.set(this.enemy.id, { heroId: config.enemyHeroId, items: [] });
       this.enemyAi = new EnemyHeroAi(this.enemy, ENEMY_PROFILES[config.enemyDifficulty]);
@@ -156,10 +162,6 @@ export class World {
       this.units.set(tower.id, tower);
       this.towers.set(team, tower);
     }
-
-    // Seed the lane so the drill starts in combat instead of with a 10 second walk.
-    this.spawnWave(LANE_CENTER - 150, LANE_CENTER + 150);
-    this.waveTimer = WAVE_INTERVAL;
   }
 
   // ---------------------------------------------------------------- queries
@@ -468,7 +470,9 @@ export class World {
 
     if (this.waveCount < this.config.waves) {
       this.waveTimer -= dt;
-      if (this.waveTimer <= 0) {
+      // The epsilon puts the first wave on 0:00 exactly: 600 subtractions of
+      // 1/120 from 5 finish just above zero, a frame late.
+      if (this.waveTimer <= TIMER_EPSILON) {
         this.waveTimer += WAVE_INTERVAL;
         this.spawnWave(RADIANT_SPAWN, DIRE_SPAWN);
       }

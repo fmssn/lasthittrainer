@@ -70,20 +70,22 @@ real screen position, which is the only thing covering `pickUnit` ->
 `orderAttack` end to end — picking is the renderer's job, so none of the sim
 checks touch it. Exits non-zero on the first failure.
 
-`npm run shot` (`tools/shot.mjs`) captures the menu and a lane 14 seconds in at
-a fixed seed, so two runs frame the same moment and a renderer change can be
+`npm run shot` (`tools/shot.mjs`) captures the menu and a lane at 0:14 on the
+game clock at a fixed seed, with the hero walked up from its tower, so two runs frame the same moment and a renderer change can be
 looked at rather than argued about. A visual change that is not screenshotted
 is not reviewed.
 
 `npm run balance` (`tools/balance.mjs`) drives *both* heroes with the same
 laning AI and holds your side at bot profile 3, so the only thing changing
-down the table is the opponent. It is a measurement, not a pass/fail, and it
+down the table is the opponent. It runs to 3:00 on the game clock. It is a measurement, not a pass/fail, and it
 catches the one class of bug nothing else here can: a side bias. A lane where
 Radiant quietly farms better than Dire would flatter you for three minutes and
 teach you nothing, and staring at the code does not find it. Current reading,
-with the Frost Archer on both sides and heroes levelling — profile 3 against
-profile 3 comes out 4.0 to 7.7 last hits, gap 3.7, and the ladder runs 2.7 ->
-4.7 -> 7.7 -> 9.0 -> 11.0. Three seeds swing that gap badly: over twelve the
+with the Frost Archer on both sides, heroes levelling and the lane opening on
+the countdown from behind the towers — profile 3 against profile 3 comes out
+3.7 to 8.0 last hits, gap 4.3, and the ladder runs 1.7 -> 3.0 -> 3.7 -> 9.0 ->
+10.3. Before the countdown, when the drill opened on a formed lane, it read
+4.0 to 7.7, gap 3.7, over the same three seeds. Three seeds swing that gap badly: over twelve the
 mirror is 5.0 to 7.7, over another 24 it is 7.1 to 8.1 and over 60 more (seeds
 200-259) it is 7.1 to 7.8, with the ladder monotonic throughout (2.8 -> 5.0 ->
 8.1 -> 9.9 -> 13.7 over the 24). So Dire still edges the lane, by under a last
@@ -176,6 +178,14 @@ tools/audio/      generate.py, process.py and the record of every sound's take
   `HeroSource`, gains included, not by computing a stat block by hand. Copy
   `BaseAttackSpeed` too when the hero file overrides the base 100 — the
   Swordmaster's 110 went missing once and made its swing 0.018s slow.
+- A drill opens with `START_COUNTDOWN` (5 s, `config.ts`) of empty lane, both
+  heroes behind their tier 1s. `World.time` is the game clock and starts at
+  minus that, so the first wave leaves the bases at 0:00 and anything keyed to
+  the clock (the 5:00 early-aggro block) keeps its Dota time. The horn plays at
+  0:00. `npm run check` wraps `World` so every check starts at the first creep
+  swing, the moment the old formed-lane start dropped you into.
+- The drill's camera is fixed at Dota's framing (`ZOOM_DEFAULT` in `scene.ts`);
+  the wheel does nothing in a drill. Only the debug page zooms.
 - Heroes level, the bot included. A death pays its `bountyXp` (a hero: 100 +
   13% of its experience) to the living enemy heroes within 1500, split and
   truncated, whoever landed the blow; a denied creep pays the enemy half and
@@ -306,9 +316,12 @@ built by `tools/blender/build_units.py` with the team colour in the atlas. They
 read apart by weapon (blade and shield against a staff and a caster's hat),
 which is a gameplay concern, not a cosmetic one: a ranged creep has 300 HP and
 a melee one 550, so which is which decides whether a swing is a last hit. Their
-Attack clip carries its contact time and their Walk clip its stride in glTF
-extras (`hitTime`, `groundSpeed`), which `loadKayKitCreep` refuses to load
-without.
+Attack clip carries its contact time in glTF extras (`hitTime`), which
+`loadKayKitCreep` refuses to load without. The Walk clip still carries its
+stride (`groundSpeed`), but the runtime no longer foot-locks to it: every walk
+plays at its authored rate at full move speed (`WALK_CADENCE_MAX` in
+`unitView.ts`), because the locked cadence, 1.86x of a run for a creep, read as
+frantic legs.
 
 Each hero has a model of its own, `public/models/heroes/<heroId>.glb`, loaded
 for every id in `HEROES`. The armature carries `hitTime` (seconds into the

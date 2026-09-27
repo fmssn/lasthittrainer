@@ -238,6 +238,28 @@ kbd {
   color: var(--muted);
 }
 
+.countdown {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 22%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  pointer-events: none;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+}
+
+.countdown-value {
+  font: 700 64px var(--display);
+  line-height: 1;
+}
+
+.countdown-sub {
+  color: var(--muted);
+}
+
 /* --------------------------------------------------------------- screens */
 
 .screen {

@@ -6,9 +6,10 @@ export interface DrillConfig {
   /** Your starting items. The bot always starts empty-handed. */
   items: ItemId[];
   /**
-   * Drill length in creep waves, counting the one already fighting at the
-   * start. The drill ends once every creep of the last wave has died, so the
-   * last wave is farmed as fully as the first.
+   * Drill length in creep waves, counting the first one, which leaves the
+   * bases once {@link START_COUNTDOWN} runs out. The drill ends once every
+   * creep of the last wave has died, so the last wave is farmed as fully as
+   * the first.
    */
   waves: number;
 
@@ -24,6 +25,16 @@ export interface DrillConfig {
 
   seed: number;
 }
+
+/**
+ * Seconds between the start of a drill and the first wave leaving the bases,
+ * with both heroes standing behind their tier 1 towers. The world clock runs
+ * from minus this, so the first wave leaves at 0:00 as it does in Dota and
+ * every timing that follows the game clock (the 5:00 end of the early-aggro
+ * block, the siege wave) keeps its real time. Dota's own wait is 90 seconds of
+ * pregame; five is enough to take the mouse and walk up.
+ */
+export const START_COUNTDOWN = 5;
 
 export const DEFAULT_CONFIG: DrillConfig = {
   heroId: 'frost_archer',
