@@ -3,11 +3,10 @@ import * as THREE from 'three';
 /**
  * The outline Dota draws round whatever the cursor is over.
  *
- * Done in screen space rather than with an inflated back-face hull: the KayKit
- * creeps are flat-shaded, so their normals split at every edge and a hull
- * pushed out along them tears open at the corners. Instead the hovered unit is
- * drawn flat white into a mask, and a full-screen pass lights the pixels just
- * outside it. That follows the silhouette exactly, mid-swing included, and
+ * Done in screen space rather than with an inflated hull: every unit is a
+ * sprite, a flat card with nothing to push out. Instead the hovered unit is
+ * drawn flat white into a mask (the sprite's own pixels, see spriteView.ts), and
+ * a full-screen pass lights the pixels just outside it. That follows the silhouette exactly, mid-swing included, and
  * stays the same width in pixels at every zoom.
  *
  * The line is hidden wherever another unit stands in front of it. That takes

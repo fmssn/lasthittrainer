@@ -106,6 +106,8 @@ dependency is three.
 
 ## Credits
 
-The melee and ranged creeps are from Kay Lousberg's
-[KayKit Character Pack: Skeletons](https://kaylousberg.itch.io/kaykit-skeletons)
-(CC0), recoloured per team by `tools/blender/build_units.py`.
+Every unit, tree, rock and ground texture in the lane is rendered from
+[Synty Studios](https://syntystore.com)' POLYGON packs (Samurai, Elven Realm,
+Fantasy Kingdom, Dark Fortress, Nature, and the Sword Combat, Bow Combat and
+Base Locomotion animations), under Synty's licence. Only the rendered sprites
+are in this repository; `art_src/README.md` says how they are made.

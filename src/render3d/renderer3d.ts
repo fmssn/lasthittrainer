@@ -2,14 +2,14 @@ import * as THREE from 'three';
 import type { Unit, Vec2 } from '../sim/types.ts';
 import type { World } from '../sim/world.ts';
 import { Scene3D } from './scene.ts';
-import { UnitView, type UnitAssets } from './unitView.ts';
+import type { Assets } from './assets.ts';
+import { SpriteView } from './spriteView.ts';
 import { HEROES } from '../sim/heroes.ts';
-import { HERO_TINT_SHIFT, KIND_SCALE, TEAM_TINT, TOWER_VISUAL_RADIUS, pickRadius, rigHeight } from './appearance.ts';
+import { pickRadius, rigHeight, sheetId, spriteFit } from './appearance.ts';
 import { Annotations } from './annotations.ts';
 import { ProjectileLayer } from './projectileView.ts';
 import { Effects } from './effects.ts';
 import { HoverOutline, OCCLUDER_LAYER } from './outline.ts';
-import { SiegeView } from './siegeView.ts';
 
 /**
  * The renderer: a three.js stage plus a screen-space overlay.
@@ -77,19 +77,8 @@ function rayCylinder(ray: THREE.Ray, cx: number, cz: number, r: number, h: numbe
   return Math.max(enter, 0);
 }
 
-/**
- * Every unit view answers the same four things, so the renderer does not care
- * whether a unit is the shared skinned rig or the catapult's own geometry.
- */
-interface UnitLike {
-  readonly root: THREE.Object3D;
-  sync(unit: Unit, dt: number): void;
-  dispose(): void;
-  readonly clip: string;
-}
-
 interface Rec {
-  view: UnitLike;
+  view: SpriteView;
   /** Last seen sim state, kept so a unit removed mid-death still falls over. */
   last: Unit;
   /** Seconds since the unit vanished from the sim. */
@@ -99,10 +88,6 @@ interface Rec {
 /** Units hide the hover outline where they stand in front of it; the lane and scenery do not. */
 function occludes(root: THREE.Object3D) {
   root.traverse((o) => o.layers.enable(OCCLUDER_LAYER));
-}
-
-function heroTint(unit: Unit): number {
-  return new THREE.Color(TEAM_TINT[unit.team]).multiplyScalar(HERO_TINT_SHIFT).getHex();
 }
 
 export class Renderer3D {
@@ -117,7 +102,6 @@ export class Renderer3D {
   private readonly annotations: Annotations;
 
   private readonly views = new Map<number, Rec>();
-  private readonly towers = new Map<number, THREE.Object3D>();
   private readonly rings: THREE.Mesh[] = [];
   private ringsUsed = 0;
   private readonly bolts: ProjectileLayer;
@@ -137,14 +121,14 @@ export class Renderer3D {
   constructor(
     container: HTMLElement,
     before: HTMLElement,
-    private readonly assets: UnitAssets,
+    private readonly assets: Assets,
   ) {
     this.canvas = document.createElement('canvas');
     this.canvas.className = 'stage3d';
     // Under #game, which stays on top as the pointer surface.
     container.insertBefore(this.canvas, before);
 
-    this.stage = new Scene3D(this.canvas);
+    this.stage = new Scene3D(this.canvas, assets);
     this.annotations = new Annotations(container, before, this.stage.camera);
     this.effects = new Effects(this.stage.scene);
     this.bolts = new ProjectileLayer(this.stage.scene, this.effects);
@@ -285,19 +269,6 @@ export class Renderer3D {
   // ------------------------------------------------------------------- units
 
   private syncUnit(unit: Unit, dt: number) {
-    if (unit.kind === 'tower') {
-      let mesh = this.towers.get(unit.id);
-      if (!mesh) {
-        mesh = towerMesh(unit);
-        occludes(mesh);
-        this.towers.set(unit.id, mesh);
-        this.stage.scene.add(mesh);
-      }
-      mesh.position.set(unit.pos.x, 0, unit.pos.y);
-      mesh.visible = unit.alive;
-      return;
-    }
-
     let rec = this.views.get(unit.id);
     if (!rec) {
       rec = { view: this.makeView(unit), last: unit, ghost: 0 };
@@ -311,33 +282,25 @@ export class Renderer3D {
   }
 
   /**
-   * The catapult is authored directly in sim units and has no skeleton, so it
-   * takes no per-kind scale. Melee and ranged creeps are KayKit skeletons in
-   * their team's colours; heroes have models of their own. Towers never get
-   * here: {@link syncUnit} builds them.
+   * Every unit is a sprite: a hero's sheet goes by its hero id, everything
+   * else's by kind and team, and appearance.ts says how big each is drawn.
    */
-  private makeView(unit: Unit): UnitLike {
-    const kind = unit.kind;
-    if (kind === 'siege_creep') return new SiegeView(unit);
-    if (kind === 'tower') throw new Error('towers are drawn by towerMesh, not a unit view');
-    const view =
-      kind === 'hero'
-        ? new UnitView(this.heroAsset(unit), heroTint(unit))
-        : new UnitView(this.assets.creeps[kind][unit.team]);
-    view.root.scale.multiplyScalar(KIND_SCALE[kind] ?? 1);
-    return view;
+  private makeView(unit: Unit): SpriteView {
+    const sheet = unit.kind === 'hero' ? this.heroSprites(unit) : this.assets.units[sheetId(unit)];
+    if (!sheet) throw new Error(`no sprites loaded for ${sheetId(unit)}`);
+    return new SpriteView(sheet, unit.team, this.stage.camera, spriteFit(unit.kind));
   }
 
   /**
    * A unit carries its hero's display name but not its id, and the sim has no
    * reason to grow a render-only field, so the id is looked up by name. Every
-   * hero's model is loaded before the renderer exists, so a miss is a bug.
+   * hero's sprites are loaded before the renderer exists, so a miss is a bug.
    */
-  private heroAsset(unit: Unit) {
+  private heroSprites(unit: Unit) {
     const id = HEROES.find((h) => h.name === unit.name)?.id;
-    const asset = id ? this.assets.heroes[id] : undefined;
-    if (!asset) throw new Error(`no model loaded for hero "${unit.name}"`);
-    return asset;
+    const sheet = id ? this.assets.units[id] : undefined;
+    if (!sheet) throw new Error(`no sprites loaded for hero "${unit.name}"`);
+    return sheet;
   }
 
   /** Units the sim has forgotten: hold the corpse long enough to read the fall. */
@@ -351,16 +314,11 @@ export class Renderer3D {
         this.views.delete(id);
       }
     }
-    for (const [id, mesh] of this.towers) {
-      if (seen.has(id)) continue;
-      mesh.removeFromParent();
-      this.towers.delete(id);
-    }
   }
 
   private hoverObject(): THREE.Object3D | null {
     if (this.hoverId === null) return null;
-    return this.views.get(this.hoverId)?.view.root ?? this.towers.get(this.hoverId) ?? null;
+    return this.views.get(this.hoverId)?.view.root ?? null;
   }
 
   // ------------------------------------------------------------ ground rings
@@ -434,8 +392,6 @@ export class Renderer3D {
   private clearScene() {
     for (const rec of this.views.values()) rec.view.dispose();
     this.views.clear();
-    for (const mesh of this.towers.values()) mesh.removeFromParent();
-    this.towers.clear();
     for (const r of this.rings) r.visible = false;
     this.bolts.clear();
     this.effects.clear();
@@ -490,46 +446,4 @@ export class Renderer3D {
     this.stage.resize();
     this.annotations.resize();
   }
-}
-
-/**
- * A tier 1 tower: tapered stone shaft, a wider crown, and a lit brazier on top.
- * Built from the drawn radius rather than the collision hull, which at 144 is
- * more than twice as wide as a tower looks.
- */
-function towerMesh(unit: Unit): THREE.Object3D {
-  const g = new THREE.Group();
-  const radiant = unit.team === 'radiant';
-  const stone = new THREE.MeshStandardMaterial({
-    color: radiant ? 0x6d7360 : 0x6b585a,
-    roughness: 0.95,
-  });
-  const r = TOWER_VISUAL_RADIUS;
-
-  const base = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.95, r * 1.25, 60, 8), stone);
-  base.position.y = 30;
-  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.62, r * 0.92, 170, 8), stone);
-  shaft.position.y = 145;
-  const crown = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.86, r * 0.66, 34, 8), stone);
-  crown.position.y = 245;
-  for (const m of [base, shaft, crown]) {
-    m.castShadow = true;
-    m.receiveShadow = true;
-    g.add(m);
-  }
-
-  // The brazier reads the team colour from much further away than the stone
-  // does, and gives the tower a silhouette that is not just a cylinder.
-  const glow = new THREE.Mesh(
-    new THREE.SphereGeometry(r * 0.34, 12, 10),
-    new THREE.MeshStandardMaterial({
-      color: radiant ? 0x9ff0b4 : 0xff9a7a,
-      emissive: radiant ? 0x3fbf6a : 0xd8492f,
-      emissiveIntensity: 1.4,
-      roughness: 0.4,
-    }),
-  );
-  glow.position.y = 272;
-  g.add(glow);
-  return g;
 }

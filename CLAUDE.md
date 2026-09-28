@@ -22,30 +22,20 @@ npm run shot     # screenshot the menu, a formed lane and results (needs npm run
 npm run balance  # difficulty calibration for the bot (needs npm run dev)
 ```
 
-The KayKit creep models in `public/models/units/` are built with the pinned
-Blender and packs from `tools/fetch_assets.sh`:
-`<blender> --background --python tools/blender/build_units.py` (`--only
-melee_creep` for one look, `--renders DIR` for contact sheets under `xvfb-run`).
-It checks every file it writes and two builds are byte-identical.
-
 The sounds in `public/audio/` were generated with Stable Audio 3 Medium on a
 ComfyUI (`tools/audio/generate.py`, then `process.py` to rank and clean the
 takes) and picked by ear. `tools/audio/keepers.json` names the prompt and take
 behind every file, and `docs/sounds.md` says why each prompt reads as it does
 and why it is Medium and not Medium Base.
 
-`tools/blender/check_anim.py` checks the hero clips the way three.js plays
-them and films what it finds: `<blender> --background --python
-tools/blender/check_anim.py -- --glb public/models/heroes/swordmaster.glb
---glb public/models/heroes/frost_archer.glb [--blend tools/blender/heroes.blend]
-[--clips Attack,Walk] [--no-video]` (under `xvfb-run -a` without a display).
-Per bone and 60 fps sample it measures the parent-relative turn (short path),
-jitter and the Idle/Walk loop seams; it also measures clipping between the
-deformed meshes (bind-pose intersections excluded), GLB weights, and with
-`--blend` influences past four and Preserve Volume. Thresholds are constants at
-the top. It writes `shots/anim/report.md`, `report.json`, and one MP4 per hero
-and clip: clay 3/4 and side views, 4x slow, flagged frames held, flagged bones
-orange and clipping faces red. It reads the models and never writes them.
+Everything drawn in the lane — heroes, creeps, catapults, towers, scenery and
+the ground's tiles — is in `public/sprites/`, rendered from Synty's POLYGON
+packs, which are licensed and so not in the repo: `art_src/README.md` lists
+the zips, where they unpack, and the four steps that rebuild the sprites
+(`tools/blender/build_characters.py` and `build_props.py`, supplyline's sprite
+pipeline on the render farm, `tools/blender/pack_sprites.py`). Each step
+refuses input the next one would choke on: a clip without its contact frame, a
+frame touching its sprite's edge, a pixel outside the palette.
 
 The three browser harnesses drive the Chromium a Claude Code container ships at
 `/opt/pw-browsers`; anywhere else they fall back to playwright's own, which
@@ -123,13 +113,15 @@ src/sim/          Headless game simulation
 
 src/render3d/     The renderer: three.js stage + screen-space overlay
   scene.ts        Stage: camera, lights. Sim (x,y) -> three (x,0,y)
-  terrain.ts      Ground, lane path, rock ridges, treeline
+  terrain.ts      Ground (the packs' tiles mixed in a shader), lane path, and
+                  the rock ridges and treeline as instanced sprite cards
+  assets.ts       Loads every sprite sheet and ground tile before the renderer
   appearance.ts   Shared render-side facts about units: tint, scale, how tall a
                   rig is, how wide it is to click. The stage and the overlay
                   both read it so they cannot disagree.
-  unitView.ts     One animated rig; picks a clip from sim state
-  siegeView.ts    The catapult. Its own geometry, no skeleton, arm driven by
-                  the sim's attack phases.
+  spriteView.ts   Every unit: pre-rendered sprite frames on a camera-facing
+                  quad, the clip picked from sim state, a hero's team colour
+                  by palette swap
   effects.ts      Pooled impact sprites, driven by World.damageLog
   projectileView.ts  Oriented bolts with trails; flat travel, no arc
   renderer3d.ts   Renderer3D: scene + views + ground rings, and unit picking
@@ -151,8 +143,10 @@ src/input.ts      Dota-style mouse/keyboard mapping
 src/stats.ts      RunRecord persistence in localStorage (key `lht.runs.v1`)
 src/main.ts       Entry point: state machine (menu/playing/paused/results) + loop
 src/slice3d.ts    Debug entry point: unattended sim, clip histogram, free look
-tools/blender/    build_units.py builds the KayKit creeps in public/models/units/;
-                  heroes.blend holds the hand-built heroes in public/models/heroes/
+tools/blender/    build_characters.py (heroes, creeps) and build_props.py
+                  (catapults, towers, scenery, ground tiles) build the sprite
+                  sources; pack_sprites.py packs the rendered sheets
+art_src/          Where the Synty packs unpack (git-ignored) and palette.hex
 tools/audio/      generate.py, process.py and the record of every sound's take
 ```
 
@@ -249,13 +243,16 @@ tools/audio/      generate.py, process.py and the record of every sound's take
 
 ### Performance
 
-Measured over 45 seconds of a level-5 lane: peak 210 draw calls, 16k triangles,
-10 rigs. That was before the hero models. A Swordmaster is about 14.8k triangles
-in 29 primitives and a Frost Archer 9.8k in 40, and the shadow pass draws each
-again, so a Swordmaster mirror comes to about 270 calls and 74k triangles.
-That is nothing for a real GPU, but it is where the budget now goes. Rocks and trees are one instanced mesh each. The 220 impact sprites are
-individual draw calls, which is the one thing here that could scale badly, but
-it never gets near saturation in practice — so it stays simple.
+Measured over 40 seconds of the slice page's lane: peak 61 draw calls, 4.6k
+triangles, 12 units. Every unit is one quad and a shadow capsule, and the
+scenery one instanced quad for its whole page, so drawing costs next to
+nothing; what the sprites cost is texture memory, one byte of palette index
+per pixel: about 46 Mpx per hero, 19 to 27 per creep, 21 per catapult and 12 for
+the scenery, some 250 Mpx in all on pages of up to 4096 square. The catapults
+are rendered at 56 px/m and 15 fps rather than a creep's 88 and 30 to keep them
+there. The 220 impact sprites are individual draw calls, which is the one thing
+here that could scale badly, but it never gets near saturation in practice —
+so it stays simple.
 
 Frame times from this project's own harness mean nothing: it renders through
 SwiftShader. Draw-call and triangle counts are the only numbers worth trusting
@@ -294,30 +291,67 @@ cursor looks like it is over — aiming at a creep's chest resolves to a lane po
 tens of units behind its feet. The cursor ray is tested against an upright
 cylinder per unit instead, so the whole visible body is clickable.
 
-The models are a hard startup dependency: `main.ts` loads the four KayKit
-creep files and one model per hero before building the renderer, and shows a
-fatal message if any fails, since there is no 2D path to fall back to. A
-missing hero model is as fatal as a creep: there is no stand-in that swings on
-the hero's timing. The procedural box rig that once was one (`make_creep.py`,
-`weapons.ts`) went once every unit kind had a model; git history has it.
+The sprites are a hard startup dependency: `main.ts` loads every sheet and
+ground tile (`assets.ts`) before building the renderer, and shows a fatal
+message if any fails, since there is nothing to fall back to: no stand-in
+swings on a unit's timing. The procedural box rig (`make_creep.py`,
+`weapons.ts`), the KayKit creeps (`build_units.py`, `unitView.ts`), the
+catapult's own geometry (`siegeView.ts`), the hand-built 3D heroes
+(`heroes.blend`, `check_anim.py`) and the procedural tower, rocks and trees all
+went as sprites replaced them; git history has every one.
 
-Melee and ranged creeps are KayKit skeletons (CC0), one file per kind and team,
-built by `tools/blender/build_units.py` with the team colour in the atlas. They
-read apart by weapon (blade and shield against a staff and a caster's hat),
-which is a gameplay concern, not a cosmetic one: a ranged creep has 300 HP and
-a melee one 550, so which is which decides whether a swing is a last hit. Their
-Attack clip carries its contact time and their Walk clip its stride in glTF
-extras (`hitTime`, `groundSpeed`), which `loadKayKitCreep` refuses to load
-without.
+Every unit is a sprite (`spriteView.ts`), loaded from
+`public/sprites/<id>.json` and its pages: a hero's by its id in `HEROES`,
+everything else's by kind and team (`appearance.ts` `sheetId`). They are
+Synty POLYGON models, rendered from the lane camera's 57 degrees and sun, in 16
+facings (a tower in one) and every frame, and snapped to
+`art_src/sprites/palette.hex` (Aurora plus a key ramp). Characters wear Synty
+weapons and play Synty's own clips, retargeted in `tools/blender/synty.py`; a
+catapult has no skeleton, and `build_props.py` keys its arm, crank and wheels
+about their own pivots. What the game draws is a quad facing the camera with
+the frame for the unit's clip, time and facing on it.
 
-Each hero has a model of its own, `public/models/heroes/<heroId>.glb`, loaded
-for every id in `HEROES`. The armature carries `hitTime` (seconds into the
-unscaled Attack clip where the blow lands, or the arrow leaves) as a custom
-property, exported as node extras, and `loadHero` refuses a file without it.
-A hero model wears its own gear, and only its `Team` material takes the team
-tint. The renderer finds a hero's model by matching `Unit.name` against
-`HEROES`, since the sim carries no render-only hero id. A hero's arrow leaves from `HERO_LAUNCH` in `projectileView.ts`, the height
-of the Frost Archer's bow at full draw, not from a creep's shoulder.
+The creeps read apart by weapon, a blade and shield against a staff, and by
+side, Fantasy Kingdom's soldier and mage against Dark Fortress's undead and
+wraith. That is a gameplay concern, not a cosmetic one: a ranged creep has 300
+HP and a melee one 550, so which is which decides whether a swing is a last
+hit. There is no Synty spell pack, so the ranged creep casts with the sword
+pack's thrust, held with a staff; the bolt leaves as it points.
+
+- Attack starts on the phase turning to windup and is rescaled so its
+  `hitTime` (the contact, the arrow or bolt leaving, the catapult's release)
+  lands on the sim's attack point; Walk plays at the measured `groundSpeed`.
+  The clip is baked so the hit is a whole frame at the level-1 attack point, and
+  a sheet missing either number is refused at load.
+- Direction 0 faces the camera and each next one is a step clockwise from
+  above, which is a step up in sim angle.
+- A page holds palette indices, a byte per pixel. A hero's team colour is a
+  palette swap: the team's cloth renders in a key colour whose ramp the
+  palette keeps, and each team's palette has its colour there instead. Creeps,
+  catapults and towers are a different model per team and need none.
+- The quad writes the depth of the unit's feet (lifted a little toward the
+  camera, further for a tower or catapult) across its whole height, so it
+  sorts against every other sprite as a card standing where the unit stands. It keeps its own material in the outline's
+  mask passes (`allowOverride = false`) and draws itself flat there, so the
+  outline follows its pixels. An invisible capsule casts its shadow.
+
+The renderer finds a hero's sprites by matching `Unit.name` against `HEROES`,
+since the sim carries no render-only hero id. A hero's arrow leaves from
+`HERO_LAUNCH` in `projectileView.ts`, about the height of the Frost Archer's
+bow at full draw, a tower's bolt from its top and a catapult's stone from the
+top of its throw, not from a creep's shoulder.
+
+The ground is the packs' seamless ground textures, scaled down into
+`public/sprites/ground/` and mixed in `terrain.ts`'s shader so no tile repeats
+one-for-one: each is sampled at two scales turned against each other, noise
+fields lay a second ground and flowers or moss over the first, Radiant's grass
+gives way to Dire's mud along a line that wanders across the middle, and the
+path is worn down the corridor. The tiles are not snapped to the palette:
+their shading is a few percent across a whole tile, and snapping flattened it
+into two or three blotches. Trees, rocks and bushes are sprite cards like the
+units, each a random model in a random one of eight facings, never the same
+model as the one before it; the rocks are drawn at half brightness, since a
+pale rock at full strength was the brightest thing on screen.
 
 `World.damageLog` is simulation output, not a drawing instruction, and the
 renderer follows it by `seq` to place impacts. The sim still owns `floaters`,
@@ -396,36 +430,12 @@ nowhere else; if the lane is muddy, turn the lane down, never the rewards up.
   around a lane centre of 3000.
 - Attack backswing values are community-measured, not from the scripts — Dota
   reads them off the attack animation, which the scripts do not encode.
-- `public/models/heroes/swordmaster.glb` and `frost_archer.glb` are not generated. Both
-  were modelled by hand in `tools/blender/heroes.blend` and exported from there,
-  so no build script touches them.
-
-  | Hero | Scene | Collection | Rig | Actions | Hit frame (`hitTime`) |
-  |---|---|---|---|---|---|
-  | Swordmaster | "Swordmaster" | `SM_Body` | `SM_Rig` | `Idle`/`Walk`/`Attack`/`Death` | contact 14 (0.2333) |
-  | Frost Archer | "FrostArcher" | `FA_Body` | `FA_Rig` | `FA_Idle` etc. | release 24 (0.4) |
-
-  Both scenes run at 60 fps. Move the hit frame and the rig's `hitTime` has to
-  move with it. To re-export one hero:
-  - Select its collection plus its rig. The rigs are hidden in the viewport, so
-    unhide one first or it is silently left out.
-  - Options: glTF binary, Selected Objects, Active Scene, animation mode
-    Actions, Always Sample, Include > Custom Properties.
-  - Turn **off** "Export all Armature Actions" (`export_anim_single_armature`)
-    and give the rig one single-strip NLA track per clip instead. Otherwise the
-    exporter hands the other hero's actions to this rig as well.
-  - The runtime needs the clips named exactly Idle/Walk/Attack/Death. The
-    archer's actions carry an `FA_` prefix only because Blender action names
-    are file-global, so rename them around the export.
-  - Without Active Scene the default scene's Cube comes along. Without Custom
-    Properties `hitTime` is lost, and the loader then treats the model as a creep.
-  - Key every bone in every clip. A channel a clip leaves unkeyed keeps
-    whatever the last clip left there, and the exporter bakes that in.
-    That includes location: the Swordmaster's `weapon` location was keyed
-    only in Death, which floated the sword 80 cm off the hand in the other
-    three clips depending on which clip Blender had evaluated last.
-  - Hide a bone at scale 0.001, not 0. The exporter samples whole matrices,
-    and a zero-scale matrix has no rotation, so the file gets an arbitrary
-    one (the arrow spun 82 degrees on the frame it was hidden).
-  - Run `tools/blender/check_anim.py` on the exported files afterwards: no
-    rotation or jitter flags is the bar.
+- The sprites are rendered, not drawn: nothing has been hand-cleaned in
+  Pixelorama yet, and the `.pxo` files the pipeline writes stay in the
+  git-ignored build folder. The Synty clips are stock ones (a light sword combo
+  and its return to idle; the bow pack's raise, draw and release chained; the
+  sword pack's thrust standing in for a cast), so a swing is Synty's timing
+  squeezed onto Dota's, not a swing authored for it. A creep's 0.3 s backswing
+  plays the return to idle four to six times as fast as authored.
+- The single-file build (`npm run pack`) is well over the 16 MB a publishing
+  host accepts, now that every unit is a sprite sheet.

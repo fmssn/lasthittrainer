@@ -2,7 +2,7 @@ import './style.css';
 import { World } from './sim/world.ts';
 import type { DrillConfig } from './sim/config.ts';
 import { Renderer3D } from './render3d/renderer3d.ts';
-import { loadUnitAssets, type UnitAssets } from './render3d/unitView.ts';
+import { loadAssets, type Assets } from './render3d/assets.ts';
 import { Input } from './input.ts';
 import { Hud } from './ui/hud.ts';
 import { Menu } from './ui/menu.ts';
@@ -16,7 +16,7 @@ import { loadMuted, saveMuted } from './audio/settings.ts';
  *
  * The single-file build (`npm run pack`) has nowhere to fetch a file from — the
  * whole app is one HTML document, and the strict CSP it is published under
- * blocks the request anyway — so it injects every GLB and sound as a `data:`
+ * blocks the request anyway — so it injects every sprite and sound as a `data:`
  * URL on this global, keyed by its path under public/. The loaders already know
  * to parse a data: URL rather than fetch one, which is the only reason that
  * path exists.
@@ -81,7 +81,7 @@ const results = new Results(
 /**
  * Bring up the renderer, then the menu.
  *
- * The unit models have to be in memory before anything can be drawn, and there is
+ * The sprites have to be in memory before anything can be drawn, and there is
  * no second renderer to fall back to any more, so a failure here is fatal and
  * says so on screen rather than leaving a black canvas and a dead Start button.
  */
@@ -95,14 +95,14 @@ async function boot() {
     </div>`;
   overlay.appendChild(loading);
 
-  let assets: UnitAssets;
+  let assets: Assets;
   try {
-    assets = await loadUnitAssets(modelUrl);
+    assets = await loadAssets(modelUrl);
   } catch (err) {
     // textContent, not innerHTML: the message comes from a loader, not from us.
     loading.querySelector('h1')!.textContent = 'Could not start';
     loading.querySelector('[data-msg]')!.textContent =
-      `The unit models failed to load: ${(err as Error).message}. Reload to try again.`;
+      `The lane's sprites failed to load: ${(err as Error).message}. Reload to try again.`;
     console.error(err);
     return;
   }

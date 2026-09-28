@@ -136,7 +136,7 @@ export const HULL = {
  * How close two bodies may stand, per kind. A deliberate departure from
  * {@link HULL}, which still sets attack range.
  *
- * The hulls are right for Valve's models, not for the ones drawn here: a KayKit
+ * The hulls are right for Valve's models, not for the ones drawn here: a drawn
  * melee creep's torso alone is about 16 units across its middle, so at hull
  * contact two creeps stand shield inside shield, and a ranged creep's hull of
  * 8 lets a whole wave fold into one silhouette. These follow the drawn bodies

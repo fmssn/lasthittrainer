@@ -1,7 +1,7 @@
 import { World } from './sim/world.ts';
 import { DEFAULT_CONFIG } from './sim/config.ts';
 import { Renderer3D } from './render3d/renderer3d.ts';
-import { loadUnitAssets } from './render3d/unitView.ts';
+import { loadAssets } from './render3d/assets.ts';
 import { wheelNotches } from './input.ts';
 
 /**
@@ -23,10 +23,10 @@ const info = document.getElementById('info') as HTMLDivElement;
 
 const world = new World({ ...DEFAULT_CONFIG, waves: Infinity });
 
-loadUnitAssets((path) => `/${path}`)
+loadAssets((path) => `/${path}`)
   .then((assets) => start(new Renderer3D(app, info, assets)))
   .catch((err) => {
-    info.textContent = `Failed to load the unit models: ${err.message}`;
+    info.textContent = `Failed to load the sprites: ${err.message}`;
     console.error(err);
   });
 
