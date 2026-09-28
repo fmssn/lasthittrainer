@@ -49,6 +49,10 @@ export class Hud {
         </div>
       </div>
       <div class="hud-panel hud-inventory" data-inventory></div>
+      <div class="countdown" data-countdown hidden>
+        <div class="countdown-sub">Creeps spawn in</div>
+        <div class="countdown-value" data-countdown-value>5</div>
+      </div>
       <div class="dead-overlay" data-dead hidden>
         <div class="dead-title">You died</div>
         <div class="dead-sub">Respawning in <span data-respawn>6</span>s — stop tanking the wave.</div>
@@ -106,6 +110,12 @@ export class Hud {
     } else {
       panel.hidden = true;
     }
+
+    // Until the first wave leaves at 0:00. Not dimmed like the death screen:
+    // it is the moment to walk up to your tower.
+    const countdown = this.q('data-countdown');
+    countdown.hidden = world.time >= 0;
+    if (world.time < 0) this.q('data-countdown-value').textContent = String(Math.ceil(-world.time));
 
     const dead = this.q('data-dead');
     dead.hidden = world.player.alive;

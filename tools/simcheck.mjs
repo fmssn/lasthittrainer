@@ -36,7 +36,21 @@ const results = await page.evaluate(async () => {
   const heroes = await import('/src/sim/heroes.ts');
   const units = await import('/src/sim/units.ts');
   const constants = await import('/src/sim/constants.ts');
-  const { World } = await import('/src/sim/world.ts');
+  const sim = await import('/src/sim/world.ts');
+  // A drill opens with a countdown and an empty lane, and its first waves take
+  // some eight seconds to meet. The checks here are about what happens in a
+  // fight, so they start from the first swing of one creep at another, which is
+  // what the lane looked like at 0:00 when the drill still opened on it.
+  const World = class extends sim.World {
+    constructor(config) {
+      super(config);
+      const fighting = () =>
+        [...this.units.values()].some(
+          (u) => u.kind.endsWith('_creep') && u.phase === 'windup' && this.get(u.attackTargetId)?.kind.endsWith('_creep'),
+        );
+      while (!fighting() && this.time < 30) this.step(1 / 120);
+    }
+  };
   const { DEFAULT_CONFIG } = await import('/src/sim/config.ts');
 
   // --- Dota formulas ------------------------------------------------------
@@ -974,13 +988,19 @@ await page.evaluate(() => {
     items: [],
   });
 });
-// Two seconds on the lane's clock, not the wall's. Under SwiftShader on a slow
-// runner a frame can take the best part of a second, and a frame advances the
-// sim by at most 0.25 s, so 2.5 s of waiting was once too little time for the
-// first melee swing, 0.7 s into the lane, to land.
-await page.waitForFunction(() => (window.__lht.world?.time ?? 0) >= 2, null, { timeout: 60000 });
+// Walk up during the countdown, as a player would, so the fight the click
+// below aims at is on screen.
+await page.evaluate(() => {
+  const w = window.__lht.world;
+  w.orderMove(w.player, { x: 2600, y: 0 });
+});
+// Ten seconds on the lane's clock, not the wall's: the first waves leave at
+// 0:00 and meet about eight seconds later. Under SwiftShader on a slow runner a
+// frame can take the best part of a second, and a frame advances the sim by at
+// most 0.25 s, so waiting on the wall's clock was once too little time.
+await page.waitForFunction(() => (window.__lht.world?.time ?? -Infinity) >= 10, null, { timeout: 120000 });
 
-// And a real drill does make them: the seeded lane starts in combat.
+// And a real drill does make them, once the waves meet.
 const drillPlays = await page.evaluate(() => window.__lht.audioStats());
 results.push({
   name: 'a running drill plays creep hits',

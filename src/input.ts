@@ -9,7 +9,6 @@ import type { World } from './sim/world.ts';
  *                      attack-move there. The only way to deny your own creep,
  *                      and — aimed at one — the way to hand creep aggro back
  *   S                  stop (cancels the backswing, frees the next order)
- *   scroll             zoom
  *   space              pause
  *   M                  mute
  */
@@ -28,7 +27,10 @@ export class Input {
     canvas.addEventListener('mousedown', (e) => this.onMouseDown(e));
     canvas.addEventListener('mousemove', (e) => this.onMouseMove(e));
     canvas.addEventListener('mouseleave', () => (this.renderer.pointer = null));
-    canvas.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
+    // The camera is fixed, as in Dota at its default distance, so the wheel does
+    // nothing. It is still swallowed: a trackpad pinch arrives as a ctrl+wheel
+    // and would otherwise zoom the whole page.
+    canvas.addEventListener('wheel', (e) => e.preventDefault(), { passive: false });
     window.addEventListener('keydown', (e) => this.onKeyDown(e));
   }
 
@@ -78,11 +80,6 @@ export class Input {
     }
   }
 
-  private onWheel(e: WheelEvent) {
-    e.preventDefault();
-    this.renderer.zoom(wheelNotches(e));
-  }
-
   private onKeyDown(e: KeyboardEvent) {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
     const world = this.world;
@@ -120,24 +117,4 @@ export class Input {
       world.orderStop(world.player);
     }
   }
-}
-
-/**
- * A wheel event as mouse-wheel notches, positive for zooming out.
- *
- * Counting events instead, as this used to, is right for a mouse and wrong for
- * a trackpad: a two-finger swipe or a pinch arrives as dozens of small events,
- * and each of them zoomed a full notch, so one gesture ran the whole range. A
- * notch is 100 px in Chromium and 3 lines in Firefox's line mode. One event
- * never counts for more than a notch, so an accelerated wheel cannot jump the
- * range in a single tick either.
- */
-export function wheelNotches(e: WheelEvent): number {
-  const notches =
-    e.deltaMode === WheelEvent.DOM_DELTA_LINE
-      ? e.deltaY / 3
-      : e.deltaMode === WheelEvent.DOM_DELTA_PAGE
-        ? e.deltaY
-        : e.deltaY / 100;
-  return Math.max(-1, Math.min(1, notches));
 }

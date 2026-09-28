@@ -30,6 +30,19 @@ import { attackPointTime } from '../sim/constants.ts';
 export const WALK_EPSILON = 12;
 
 /**
+ * Walk clip rate at a unit's full move speed: the rate it was animated at.
+ *
+ * The walk used to be foot-locked, played at whatever rate kept a planted foot
+ * still. The units are small for the distances Dota moves them, so a planted
+ * foot needs that many steps a second (1.86x for a creep), and playtesters
+ * found the legs frantic. So the feet slide a little instead, and the stride
+ * reads at the pace it was animated for. Slower than full speed (squeezing
+ * past a wavemate) slows the clip in proportion, down to the minimum.
+ */
+const WALK_CADENCE_MAX = 1;
+const WALK_CADENCE_MIN = 0.5;
+
+/**
  * Seconds of travel averaged into one speed reading.
  *
  * The sim only moves on its fixed 1/120 s step, so at render rates at or above
@@ -67,7 +80,10 @@ export interface SpriteClip {
   kind?: 'tree' | 'rock' | 'bush';
   /** Attack only: seconds into the clip, at time scale 1, where the blow lands or the arrow leaves. */
   hitTime?: number;
-  /** Walk only: metres per second the feet travel at time scale 1. */
+  /**
+   * Walk only: metres per second the feet travel at time scale 1. Recorded,
+   * but no longer played to: see WALK_CADENCE_MAX.
+   */
   groundSpeed?: number;
   /** By direction, then frame. */
   cells: Cell[][];
@@ -113,8 +129,7 @@ const RAMP_REFERENCE = 0.85;
  * Loads a sheet's pages and manifest. `url` maps a path under public/ to where
  * it is served from; `tints` is each team's colour for a hero's key ramp.
  * `needs` names the clips the sheet must have. An Attack without its hitTime
- * or a Walk without its groundSpeed would swing off the sim's timing or skate,
- * so either is refused.
+ * would swing off the sim's timing, so it is refused.
  */
 export async function loadSprites(
   id: string,
@@ -136,7 +151,6 @@ export async function loadSprites(
   if (needs.includes('Attack') && !(attack.hitTime! > 0 && attack.hitTime! < attack.frames / attack.fps)) {
     throw new Error(`${id}: the Attack sprites need a hitTime inside the clip`);
   }
-  if (needs.includes('Walk') && !(sheet.clips.Walk.groundSpeed! > 0)) throw new Error(`${id}: the Walk sprites need a groundSpeed`);
   const pages = await Promise.all(sheet.pages.map(async (p) => pageTexture(await decodeGreyPng(await fetchBytes(url(`sprites/${p}`))))));
   return {
     pixelsPerMetre: sheet.pixelsPerMetre,
@@ -324,15 +338,12 @@ export class SpriteView {
   private window = 0;
   private dead = false;
 
-  private readonly unitsPerMetre: number;
-
   constructor(
     private readonly sheet: SpriteSheet,
     team: Team,
     private readonly camera: THREE.Camera,
     fit: SpriteFit,
   ) {
-    this.unitsPerMetre = fit.unitsPerMetre;
     this.unitsPerPixel = fit.unitsPerMetre / sheet.pixelsPerMetre;
     this.material = new THREE.ShaderMaterial({
       uniforms: THREE.UniformsUtils.merge([
@@ -411,8 +422,7 @@ export class SpriteView {
         this.play('Attack', this.sheet.clips.Attack.hitTime! / Math.max(point, 0.01));
       } else if (!swinging) {
         if (this.speed > WALK_EPSILON) {
-          const stride = this.sheet.clips.Walk.groundSpeed! * this.unitsPerMetre;
-          const cadence = THREE.MathUtils.clamp(this.speed / stride, 0.7, 2.0);
+          const cadence = THREE.MathUtils.clamp(this.speed / unit.moveSpeed, WALK_CADENCE_MIN, WALK_CADENCE_MAX);
           if (this.current !== 'Walk') this.play('Walk', cadence);
           this.timeScale = cadence;
         } else if (this.current !== 'Idle') {

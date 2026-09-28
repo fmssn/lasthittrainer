@@ -12,7 +12,7 @@ import { chromium } from 'playwright';
 import { chromiumPath } from './chromium.mjs';
 
 const label = process.argv[2] ?? 'shot';
-/** Seconds of drill to run before the lane shot, so a wave has formed. */
+/** Game-clock seconds before the lane shot. The waves leave at 0:00 and meet about eight seconds later. */
 const seconds = Number(process.argv[3] ?? 14);
 const dir = process.env.SHOTS ?? 'shots';
 const url = process.env.URL ?? 'http://localhost:5173/';
@@ -51,7 +51,15 @@ await page.evaluate(() => {
     seed: 4242,
   });
 });
-await page.waitForTimeout(seconds * 1000);
+// Walk up to the lane during the countdown, as a player would; the camera
+// follows the hero, and the hero starts behind its tower.
+await page.evaluate(() => {
+  const w = window.__lht.world;
+  w.orderMove(w.player, { x: 2600, y: 0 });
+});
+// On the lane's clock, which starts at minus the countdown, so a slow frame
+// under SwiftShader cannot move the moment that is framed.
+await page.waitForFunction((s) => window.__lht.world.time >= s, seconds, { timeout: 120000 });
 await page.screenshot({ path: `${dir}/${label}-lane.png` });
 
 // End the run to catch the results screen, which is otherwise only reachable

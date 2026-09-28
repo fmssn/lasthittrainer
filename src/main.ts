@@ -1,5 +1,5 @@
 import './style.css';
-import { World } from './sim/world.ts';
+import { LANE_CENTER, World } from './sim/world.ts';
 import type { DrillConfig } from './sim/config.ts';
 import { Renderer3D } from './render3d/renderer3d.ts';
 import { loadAssets, type Assets } from './render3d/assets.ts';
@@ -167,8 +167,7 @@ function start(config: DrillConfig) {
   mixer.stop('run_end');
   mixer.resume();
   laneAudio.reset(world);
-  // Dota's 0:00 horn, and the forest the drill runs in.
-  mixer.play('horn');
+  // The forest the drill runs in; the horn waits for 0:00, in frame().
   ambience = mixer.play('lane_ambience');
   menu.hide();
   results.hide();
@@ -220,10 +219,13 @@ function frame(now: number) {
 
   if (state === 'playing' && world) {
     accumulator += elapsed;
+    const before = world.time;
     while (accumulator >= SIM_STEP) {
       world.step(SIM_STEP);
       accumulator -= SIM_STEP;
     }
+    // Dota's horn, as the first wave leaves the bases.
+    if (before < 0 && world.time >= 0) mixer.play('horn');
     // Lead the camera toward the enemy side; that is where the creeps you are
     // farming always are.
     renderer.follow(world.player.pos, elapsed, CAMERA_LEAD);
@@ -245,8 +247,10 @@ let backdrop: World | null = null;
 function emptyWorld(): World {
   if (!backdrop) {
     backdrop = new World({ ...menu.config, enemyHero: false, waves: Infinity, seed: 1234 });
-    for (let i = 0; i < 240; i++) backdrop.step(SIM_STEP);
-    renderer.snap(backdrop.player.pos);
+    // Until the first waves have met: they leave the bases at 0:00 and take
+    // about eight seconds to reach the middle.
+    while (backdrop.time < 10) backdrop.step(SIM_STEP);
+    renderer.snap({ x: LANE_CENTER, y: 0 });
   }
   return backdrop;
 }

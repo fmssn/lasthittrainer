@@ -42,19 +42,29 @@ const CAMERA_PITCH = 57;
 const CAMERA_YAW = -28;
 
 /**
- * Zoom range, as the half-height of the view at the lane plane (see viewSize).
+ * The framing, as the half-height of the view at the lane plane (see viewSize).
  *
- * At the outer limit a 16:9 window holds 2630 units of lane centreline, as
- * much as lies between the two towers (2600), which is all the lane a wave
- * ever fights over. Further out shows nothing new and only shrinks the rigs,
- * while the health bars keep their size in pixels and pile up on top of them.
- * Dota is stricter still: its default camera distance is the furthest you can
- * go.
+ * The drill holds it fixed at ZOOM_DEFAULT. Dota's camera stays at its default
+ * distance in a real match, and a zoom of your own changes how fast the lane
+ * seems to move. That is the one thing a timing drill must not let drift. Only
+ * the debug page zooms, between the two limits. At the outer limit a 16:9
+ * window holds 2630 units of lane centreline, as much as lies between the two
+ * towers (2600).
+ *
+ * The default is Dota's own framing, since the speeds are Dota's too: 325 a
+ * second only looks like 325 across the amount of lane Dota shows. At 430 the
+ * view was about a quarter tighter than that, so the lane swept past and a
+ * playtester called the game too fast although every unit moved at its real
+ * speed. Dota's camera sits 1134 from its target (`dota_camera_distance`) with
+ * a 70 degree field of view across a 4:3 frame, widened for wider screens,
+ * which is 55.4 degrees vertically: a half-height of 1134 * tan(27.7) = 595 at
+ * the target. The distance is Valve's default; the field of view is the Source
+ * default, not read out of Dota's files, and is the less certain of the two.
  */
-const ZOOM_DEFAULT = 430;
+const ZOOM_DEFAULT = 595;
 const ZOOM_IN_LIMIT = 260;
 const ZOOM_OUT_LIMIT = 650;
-/** One wheel notch changes the framing by this ratio, the same both ways. */
+/** On the debug page, one wheel notch changes the framing by this ratio, the same both ways. */
 const ZOOM_STEP = 1.1;
 
 /**
@@ -69,12 +79,12 @@ const FOG_NEAR = 1.07;
 const FOG_FAR = 2.13;
 
 /**
- * Half-size of the sun's shadow box per unit of viewSize. 1100 at the default
- * framing, which covers the frame with room to spare; fixed in world units,
- * units near the corners lost their shadows from two notches out. Scaling it
- * with the view also keeps shadow texels the same size on screen.
+ * Half-size of the sun's shadow box per unit of viewSize. 1100 at a framing of
+ * 430, which covers the frame with room to spare; fixed in world units, units
+ * near the corners lost their shadows from two notches out. Scaling it with the
+ * view also keeps shadow texels the same size on screen.
  */
-const SHADOW_SPAN = 1100 / ZOOM_DEFAULT;
+const SHADOW_SPAN = 1100 / 430;
 
 export class Scene3D {
   readonly renderer: THREE.WebGLRenderer;
@@ -173,7 +183,7 @@ export class Scene3D {
     this.sun.target.updateMatrixWorld();
   }
 
-  /** Zoom by wheel notches: positive is out, fractions are fine. */
+  /** Zoom by wheel notches: positive is out, fractions are fine. Debug page only. */
   zoom(notches: number) {
     this.viewSize = THREE.MathUtils.clamp(
       this.viewSize * Math.pow(ZOOM_STEP, notches),
