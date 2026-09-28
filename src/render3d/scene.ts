@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { buildTerrain } from './terrain.ts';
+import type { Assets } from './assets.ts';
 
 /**
  * Three.js stage shared by the in-game 3D renderer and the debug page.
@@ -100,7 +101,7 @@ export class Scene3D {
   private readonly target = new THREE.Vector3();
   private readonly fog = new THREE.Fog(0x141d22);
 
-  constructor(canvas: HTMLCanvasElement) {
+  constructor(canvas: HTMLCanvasElement, assets: Assets) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
@@ -127,7 +128,7 @@ export class Scene3D {
 
     this.scene.add(new THREE.HemisphereLight(0x9ec4e0, 0x3b3226, 1.9));
 
-    this.buildGround();
+    this.buildGround(assets);
     // After the sun exists: frame() sizes its shadow box and place() aims it.
     this.frame();
     this.place();
@@ -137,11 +138,11 @@ export class Scene3D {
   private sun: THREE.DirectionalLight;
   private terrain!: ReturnType<typeof buildTerrain>;
 
-  private buildGround() {
+  private buildGround(assets: Assets) {
     // The grid helper that used to sit here was invisible at this zoom and told
     // you nothing when you could see it; terrain.ts gives the eye real things
     // to measure distance against instead.
-    this.terrain = buildTerrain();
+    this.terrain = buildTerrain(assets);
     this.scene.add(this.terrain.group);
   }
 

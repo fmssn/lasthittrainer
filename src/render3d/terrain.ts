@@ -1,26 +1,34 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { LANE_HALF_WIDTH } from '../sim/constants.ts';
+import type { Assets, GroundTile } from './assets.ts';
+import type { SpriteSheet } from './spriteView.ts';
+import { UNITS_PER_METRE } from './appearance.ts';
 
 /**
  * The lane, as a place you can judge distance in.
  *
- * The ground used to be two flat planes — a dark one for the world and a lighter
- * one for the lane — which met along a hard diagonal seam and gave the eye
- * nothing to measure against. That is a readability problem, not a decorative
- * one: last hitting is a game of "am I in range", and a featureless field makes
- * a creep 200 units away look exactly like one 500 units away.
+ * Last hitting is a game of "am I in range", and a featureless field makes a
+ * creep 200 units away look exactly like one 500 units away. So the ground
+ * carries texture at a scale you can count, the path is worn into it, rock
+ * ridges stand along both sides of the corridor, and a treeline stands behind
+ * them. The ridges do double duty: they explain the invisible wall the sim
+ * clamps movement to at LANE_HALF_WIDTH.
  *
- * So: a noisy ground texture with the lane path baked into it (no seam, soft
- * edges), rock ridges standing along both sides of the corridor, and a treeline
- * behind them. The ridges do double duty — they explain the invisible wall the
- * sim clamps movement to at LANE_HALF_WIDTH, which until now just stopped units
- * dead in open grass.
+ * The ground is the packs' own seamless textures (build_props.py), mixed in
+ * the shader so no tile ever repeats one-for-one: every texture is sampled
+ * twice, at two scales and turned against itself, and a noise field picks
+ * between the two; two more noise fields lay patches of a second ground and of
+ * flowers or moss over the first. Radiant's half is grass and Dire's mud, and
+ * the line between them wanders across the middle of the lane.
  *
- * The playable corridor itself stays perfectly flat at y = 0. Every piece of
- * relief here lives outside it, so the ground-plane raycast that turns a click
- * into a lane point, the upright cylinders used for picking, and the ring
- * geometry all keep working untouched.
+ * Trees, rocks and bushes are sprites like the units: cards standing on the
+ * ground, each a random model in a random one of its eight facings, scaled a
+ * little, and never the same model as the one beside it. Living trees give
+ * way to dead ones across the middle, with a few strays either side.
+ *
+ * The playable corridor itself stays perfectly flat at y = 0, so the
+ * ground-plane raycast that turns a click into a lane point, the upright
+ * cylinders used for picking, and the ring geometry all keep working.
  */
 
 /** How far out the rock ridges stand from the lane centre. */
@@ -28,6 +36,15 @@ const CLIFF_OFFSET = LANE_HALF_WIDTH + 55;
 /** Lane runs along +x from before the Radiant spawn to past the Dire one. */
 const LANE_FROM = -600;
 const LANE_TO = 6600;
+/** Where Radiant's ground gives way to Dire's: the middle of the lane. */
+const LANE_MID = 3000;
+/** World size of one ground tile, in sim units: about as many texture pixels as screen pixels at the default zoom. */
+const TILE_SIZE = 540;
+/**
+ * The ground's textures are lit by the same 3.1-intensity sun as the units,
+ * and at full strength the lane outshines everything standing on it.
+ */
+const GROUND_GAIN = 0.62;
 
 /** Small deterministic PRNG, so the lane is laid out the same way every run. */
 function rng(seed: number): () => number {
@@ -42,130 +59,248 @@ function rng(seed: number): () => number {
 }
 
 /**
- * Ground: mottled earth, seamless on both axes.
- *
- * Wrapped in x and y so the tile can repeat in both directions at roughly
- * square world scale. Stretching one 512px tile across 8000 units of depth and
- * 2200 of length, which is what a single non-repeating tile did, turns every
- * blob into a long ellipse and the whole field reads as horizontal banding.
+ * Four independent channels of smooth noise that tile. Summed octaves of a
+ * wrapped random lattice, each smoothed with a cubic, so the shader can read it
+ * at any scale without seams.
  */
-function groundTexture(): THREE.Texture {
-  const S = 512;
-  const c = document.createElement('canvas');
-  c.width = c.height = S;
-  const ctx = c.getContext('2d')!;
+function noiseTexture(): THREE.DataTexture {
+  const S = 256;
+  const data = new Uint8Array(S * S * 4);
   const r = rng(0x5eed);
-
-  ctx.fillStyle = '#26301f';
-  ctx.fillRect(0, 0, S, S);
-
-  // Drawn at all nine wrap offsets so the tile joins itself on every edge.
-  const blob = (x: number, y: number, rad: number, fill: string) => {
-    for (const ox of [-S, 0, S]) {
-      for (const oy of [-S, 0, S]) {
-        const g = ctx.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, rad);
-        g.addColorStop(0, fill);
-        g.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = g;
-        ctx.beginPath();
-        ctx.arc(x + ox, y + oy, rad, 0, Math.PI * 2);
-        ctx.fill();
+  const acc = new Float32Array(S * S * 4);
+  for (let c = 0; c < 4; c++) {
+    let amp = 1;
+    let total = 0;
+    for (const cells of [4, 8, 16, 32]) {
+      const lattice = Array.from({ length: cells * cells }, r);
+      const at = (i: number, j: number) => lattice[((j + cells) % cells) * cells + ((i + cells) % cells)];
+      for (let y = 0; y < S; y++) {
+        for (let x = 0; x < S; x++) {
+          const fx = (x / S) * cells;
+          const fy = (y / S) * cells;
+          const i = Math.floor(fx);
+          const j = Math.floor(fy);
+          const u = (fx - i) * (fx - i) * (3 - 2 * (fx - i));
+          const v = (fy - j) * (fy - j) * (3 - 2 * (fy - j));
+          const top = at(i, j) + (at(i + 1, j) - at(i, j)) * u;
+          const bottom = at(i, j + 1) + (at(i + 1, j + 1) - at(i, j + 1)) * u;
+          acc[(y * S + x) * 4 + c] += (top + (bottom - top) * v) * amp;
+        }
       }
+      total += amp;
+      amp *= 0.5;
     }
-  };
-  for (let i = 0; i < 220; i++) {
-    const shade = r();
-    const col =
-      shade < 0.4
-        ? 'rgba(48,60,40,0.42)'
-        : shade < 0.75
-          ? 'rgba(30,38,26,0.46)'
-          : 'rgba(58,68,44,0.26)';
-    blob(r() * S, r() * S, 16 + r() * 54, col);
+    for (let k = c; k < acc.length; k += 4) data[k] = Math.round((acc[k] / total) * 255);
   }
-
-  const tex = new THREE.CanvasTexture(c);
+  const tex = new THREE.DataTexture(data, S, S, THREE.RGBAFormat, THREE.UnsignedByteType);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.generateMipmaps = true;
+  tex.needsUpdate = true;
   return tex;
+}
+
+const GROUND_PARS = /* glsl */ `
+  uniform sampler2D tGrass, tGrassDark, tFlowers, tPath, tMud, tMudStones, tPathDire, tMoss, tNoise;
+  uniform float tileSize, laneHalf, laneMid, groundGain;
+  varying vec3 vGround;
+  // A texture sampled twice, at two scales and turned against itself, with a
+  // noise field choosing between them: no tile repeats one-for-one.
+  vec3 tiled(sampler2D t, vec2 p) {
+    vec2 a = p / tileSize;
+    vec2 b = mat2(0.8, -0.6, 0.6, 0.8) * p / (tileSize * 1.31) + vec2(0.37, 0.71);
+    float m = texture2D(tNoise, p / (tileSize * 3.7)).a;
+    return mix(texture2D(t, a).rgb, texture2D(t, b).rgb, smoothstep(0.35, 0.65, m));
+  }
+`;
+
+const GROUND_MIX = /* glsl */ `
+  {
+    vec2 p = vGround.xz;
+    vec4 wide = texture2D(tNoise, p / 2600.0);
+    vec4 near = texture2D(tNoise, p / 700.0 + 0.5);
+    vec3 radiant = mix(tiled(tGrass, p), tiled(tGrassDark, p), smoothstep(0.42, 0.68, wide.r));
+    radiant = mix(radiant, tiled(tFlowers, p), smoothstep(0.62, 0.74, near.g) * 0.85);
+    vec3 dire = mix(tiled(tMud, p), tiled(tMudStones, p), smoothstep(0.4, 0.66, wide.g));
+    dire = mix(dire, tiled(tMoss, p), smoothstep(0.6, 0.74, near.b) * 0.75);
+    // The line between the sides wanders a few hundred units either way.
+    float side = smoothstep(-450.0, 450.0, p.x - laneMid + (wide.b - 0.5) * 1400.0);
+    vec3 ground = mix(radiant, dire, side);
+    // The path: worn down the middle, its edge ragged.
+    float edge = abs(p.y) + (near.r - 0.5) * 150.0;
+    float path = 1.0 - smoothstep(laneHalf * 0.45, laneHalf * 1.05, edge);
+    vec3 lane = mix(tiled(tPath, p), tiled(tPathDire, p), side);
+    diffuseColor.rgb *= mix(ground, lane, path * 0.8) * groundGain;
+  }
+`;
+
+const UNIFORM_OF: Record<GroundTile, string> = {
+  grass: 'tGrass',
+  grass_dark: 'tGrassDark',
+  flowers: 'tFlowers',
+  path: 'tPath',
+  mud: 'tMud',
+  mud_stones: 'tMudStones',
+  path_dire: 'tPathDire',
+  moss: 'tMoss',
+};
+
+function groundMaterial(assets: Assets, noise: THREE.Texture): THREE.MeshStandardMaterial {
+  const mat = new THREE.MeshStandardMaterial({ roughness: 1 });
+  const uniforms: Record<string, { value: unknown }> = {
+    tNoise: { value: noise },
+    tileSize: { value: TILE_SIZE },
+    laneHalf: { value: LANE_HALF_WIDTH },
+    laneMid: { value: LANE_MID },
+    groundGain: { value: GROUND_GAIN },
+  };
+  for (const [name, uniform] of Object.entries(UNIFORM_OF)) uniforms[uniform] = { value: assets.ground[name as GroundTile] };
+  mat.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, uniforms);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vGround;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\nvGround = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>\n${GROUND_PARS}`)
+      .replace('#include <map_fragment>', GROUND_MIX);
+  };
+  return mat;
+}
+
+// ------------------------------------------------------------------ scenery
+
+const SCENERY_VERTEX = /* glsl */ `
+  attribute vec4 iRect;
+  attribute vec2 iOrigin;
+  attribute vec4 iFoot;
+  attribute float iShade;
+  uniform vec2 pageSize;
+  uniform float lift;
+  varying vec2 vUv;
+  varying float vShade;
+  #include <fog_pars_vertex>
+  void main() {
+    // As a unit's sprite (spriteView.ts), one per instance: iRect is the crop,
+    // iOrigin its foot point, iFoot where it stands and its sim units per pixel.
+    vec2 px = vec2(position.x * iRect.z, (1.0 - position.y) * iRect.w);
+    vec3 foot = iFoot.xyz;
+    vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
+    vec3 up = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
+    vec3 back = vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);
+    vec3 world = foot + (right * (px.x - iOrigin.x) + up * (iOrigin.y - px.y)) * iFoot.w;
+    vec4 mvPosition = viewMatrix * vec4(world, 1.0);
+    gl_Position = projectionMatrix * mvPosition;
+    vec4 feet = projectionMatrix * viewMatrix * vec4(foot + back * lift, 1.0);
+    gl_Position.z = feet.z / feet.w * gl_Position.w;
+    vUv = (iRect.xy + px) / pageSize;
+    vShade = iShade;
+    #include <fog_vertex>
+  }
+`;
+
+const SCENERY_FRAGMENT = /* glsl */ `
+  uniform sampler2D page;
+  uniform sampler2D palette;
+  varying vec2 vUv;
+  varying float vShade;
+  #include <fog_pars_fragment>
+  void main() {
+    float i = floor(texture2D(page, vUv).r * 255.0 + 0.5);
+    if (i < 0.5) discard;
+    gl_FragColor = texture2D(palette, vec2((i + 0.5) / 256.0, 0.5));
+    #include <colorspace_fragment>
+    gl_FragColor.rgb *= vShade;
+    #include <fog_fragment>
+  }
+`;
+
+/**
+ * How bright each kind of scenery is drawn against its render. The sprites are
+ * lit as brightly as the units, and a pale rock at full strength is the
+ * brightest thing on screen, at the edge of the frame where nothing worth
+ * looking at ever happens: the ridges are there to bound the corridor, not to
+ * be looked at.
+ */
+const SHADE: Record<string, number> = { rock: 0.5, bush: 0.72, tree: 0.8 };
+
+interface Placement {
+  x: number;
+  z: number;
+  variant: string;
+  /** Fraction of the model's full height. */
+  scale: number;
+}
+
+/** Scenery sprites as one instanced quad per page. */
+function sceneryMeshes(sheet: SpriteSheet, placements: Placement[], track: <T extends { dispose(): void }>(d: T) => T): THREE.Mesh[] {
+  const r = rng(0xd1ec);
+  const byPage = new Map<number, number[][]>();
+  for (const p of placements) {
+    const clip = sheet.clips[p.variant];
+    const dir = Math.floor(r() * sheet.directions);
+    const [page, x, y, w, h, ox, oy] = clip.cells[dir][0];
+    if (!w) continue;
+    const perPixel = (UNITS_PER_METRE * p.scale) / sheet.pixelsPerMetre;
+    const list = byPage.get(page) ?? [];
+    list.push([x, y, w, h, ox, oy, p.x, 0, p.z, perPixel, SHADE[clip.kind ?? 'rock'] ?? 1]);
+    byPage.set(page, list);
+  }
+  const palette = sheet.palettes.radiant;
+  const meshes: THREE.Mesh[] = [];
+  for (const [page, list] of byPage) {
+    const base = new THREE.PlaneGeometry(1, 1).translate(0.5, 0.5, 0);
+    const geom = track(new THREE.InstancedBufferGeometry());
+    geom.index = base.index;
+    geom.setAttribute('position', base.getAttribute('position'));
+    geom.instanceCount = list.length;
+    geom.setAttribute('iRect', new THREE.InstancedBufferAttribute(new Float32Array(list.flatMap((l) => l.slice(0, 4))), 4));
+    geom.setAttribute('iOrigin', new THREE.InstancedBufferAttribute(new Float32Array(list.flatMap((l) => l.slice(4, 6))), 2));
+    geom.setAttribute('iFoot', new THREE.InstancedBufferAttribute(new Float32Array(list.flatMap((l) => l.slice(6, 10))), 4));
+    geom.setAttribute('iShade', new THREE.InstancedBufferAttribute(new Float32Array(list.map((l) => l[10])), 1));
+    const tex = sheet.pages[page];
+    const mat = track(
+      new THREE.ShaderMaterial({
+        uniforms: THREE.UniformsUtils.merge([
+          THREE.UniformsLib.fog,
+          {
+            page: { value: null },
+            palette: { value: null },
+            pageSize: { value: new THREE.Vector2(tex.image.width, tex.image.height) },
+            lift: { value: 30 },
+          },
+        ]),
+        vertexShader: SCENERY_VERTEX,
+        fragmentShader: SCENERY_FRAGMENT,
+        fog: true,
+      }),
+    );
+    mat.uniforms.page.value = tex;
+    mat.uniforms.palette.value = palette;
+    const mesh = new THREE.Mesh(geom, mat);
+    // The vertex shader places every card, so the quad's own bounds say nothing.
+    mesh.frustumCulled = false;
+    meshes.push(mesh);
+  }
+  return meshes;
 }
 
 /**
- * The lane path, as a transparent overlay rather than a second opaque plane.
- *
- * Alpha falls off across the width, so the path has no edge to catch the eye —
- * the hard diagonal seam where the old lane plane met the ground was the single
- * most artificial thing in the frame. Repeats along the lane only, so the band
- * stays put across it.
+ * Picks scenery. Which side's models a spot draws from is a coin weighted by
+ * how far past the middle it is, so the two sides blend over a stretch rather
+ * than at a line; and a spot never repeats the model its neighbour took.
  */
-function pathTexture(planeWidth: number): THREE.Texture {
-  const W = 512;
-  const H = 128;
-  const c = document.createElement('canvas');
-  c.width = W;
-  c.height = H;
-  const ctx = c.getContext('2d')!;
-  const r = rng(0x9a7);
-
-  const half = (LANE_HALF_WIDTH / planeWidth) * H;
-  const mid = H / 2;
-  const grad = ctx.createLinearGradient(0, mid - half * 1.5, 0, mid + half * 1.5);
-  grad.addColorStop(0, 'rgba(86,78,58,0)');
-  grad.addColorStop(0.25, 'rgba(86,78,58,0.34)');
-  grad.addColorStop(0.5, 'rgba(96,87,64,0.44)');
-  grad.addColorStop(0.75, 'rgba(86,78,58,0.34)');
-  grad.addColorStop(1, 'rgba(86,78,58,0)');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, W, H);
-
-  // Scuffing along the direction of travel. Faint and thin: a rut you can see
-  // clearly is a rectangle, and a field of rectangles is worse than no detail.
-  ctx.globalAlpha = 0.1;
-  for (let i = 0; i < 70; i++) {
-    const y = mid + (r() - 0.5) * 2 * half;
-    ctx.fillStyle = r() < 0.5 ? '#3a3425' : '#6b6145';
-    const w = 16 + r() * 54;
-    const x = r() * W;
-    ctx.fillRect(x, y, w, 1);
-    if (x + w > W) ctx.fillRect(x - W, y, w, 1);
-  }
-  ctx.globalAlpha = 1;
-
-  const tex = new THREE.CanvasTexture(c);
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.ClampToEdgeWrapping;
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
-  return tex;
-}
-
-/** One rock: a squashed, randomly-faceted lump. */
-function rockGeometry(): THREE.BufferGeometry {
-  // Low-poly icosahedron, jittered per vertex so no two rocks read as clones
-  // once they are rotated and scaled.
-  const g = new THREE.IcosahedronGeometry(1, 0);
-  const pos = g.attributes.position as THREE.BufferAttribute;
-  const r = rng(0xb00c);
-  for (let i = 0; i < pos.count; i++) {
-    pos.setXYZ(
-      i,
-      pos.getX(i) * (0.75 + r() * 0.5),
-      pos.getY(i) * (0.7 + r() * 0.6),
-      pos.getZ(i) * (0.75 + r() * 0.5),
-    );
-  }
-  g.computeVertexNormals();
-  return g;
-}
-
-/** Trunk plus canopy, merged into one geometry so a tree is one instance. */
-function treeGeometry(): THREE.BufferGeometry {
-  const trunk = new THREE.CylinderGeometry(7, 10, 60, 5);
-  trunk.translate(0, 30, 0);
-  const canopy = new THREE.ConeGeometry(46, 130, 6);
-  canopy.translate(0, 118, 0);
-  return mergeGeometries([trunk, canopy], false)!;
+function picker(sheet: SpriteSheet, r: () => number) {
+  const all = Object.entries(sheet.clips).map(([name, clip]) => ({ name, side: clip.side ?? 'both', kind: clip.kind ?? 'rock' }));
+  let last = '';
+  return (kind: 'tree' | 'rock' | 'bush', x: number): string => {
+    const dire = THREE.MathUtils.smoothstep(x + (r() - 0.5) * 900, LANE_MID - 900, LANE_MID + 900);
+    const side = r() < dire ? 'dire' : 'radiant';
+    let options = all.filter((v) => v.kind === kind && (v.side === side || v.side === 'both') && v.name !== last);
+    if (!options.length) options = all.filter((v) => v.kind === kind);
+    last = options[Math.floor(r() * options.length)].name;
+    return last;
+  };
 }
 
 export interface Terrain {
@@ -173,7 +308,7 @@ export interface Terrain {
   dispose(): void;
 }
 
-export function buildTerrain(): Terrain {
+export function buildTerrain(assets: Assets): Terrain {
   const group = new THREE.Group();
   const disposables: Array<{ dispose(): void }> = [];
   const track = <T extends { dispose(): void }>(d: T): T => {
@@ -182,102 +317,50 @@ export function buildTerrain(): Terrain {
   };
 
   const DEPTH = 8000;
-  const tex = track(groundTexture());
-  // Roughly square world-space tiles, so the mottle keeps its shape.
-  tex.repeat.set(20000 / 1600, DEPTH / 1600);
-
-  const ground = new THREE.Mesh(
-    track(new THREE.PlaneGeometry(20000, DEPTH)),
-    track(new THREE.MeshStandardMaterial({ map: tex, roughness: 1 })),
-  );
+  const noise = track(noiseTexture());
+  const ground = new THREE.Mesh(track(new THREE.PlaneGeometry(20000, DEPTH)), track(groundMaterial(assets, noise)));
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   group.add(ground);
 
-  const PATH_WIDTH = LANE_HALF_WIDTH * 3;
-  const pathTex = track(pathTexture(PATH_WIDTH));
-  pathTex.repeat.set(20000 / 2400, 1);
-  const path = new THREE.Mesh(
-    track(new THREE.PlaneGeometry(20000, PATH_WIDTH)),
-    track(
-      new THREE.MeshStandardMaterial({
-        map: pathTex,
-        transparent: true,
-        roughness: 1,
-        depthWrite: false,
-        polygonOffset: true,
-        polygonOffsetFactor: -1,
-      }),
-    ),
-  );
-  path.rotation.x = -Math.PI / 2;
-  path.position.y = 0.4;
-  path.receiveShadow = true;
-  group.add(path);
-
-  // --- rock ridges, one row each side of the corridor ---------------------
   const r = rng(0x1a2b);
-  const rockGeom = track(rockGeometry());
-  // Dark on purpose: the ridges are there to bound the corridor and give the
-  // eye something to measure against, not to be looked at.
-  // Very dark on purpose. These are lit by the same 3.1-intensity key the units
-  // are, and a mid-grey rock under it comes out near white — which puts the
-  // brightest thing on screen at the edge of the frame, where nothing worth
-  // looking at ever happens.
-  const rockMat = track(new THREE.MeshStandardMaterial({ color: 0x272d27, roughness: 1, flatShading: true }));
+  const pick = picker(assets.scenery, r);
+  const placements: Placement[] = [];
+
+  // --- rock ridges, one row each side of the corridor, a bush now and then ---
   const STEP = 115;
   const perSide = Math.ceil((LANE_TO - LANE_FROM) / STEP);
-  const rocks = new THREE.InstancedMesh(rockGeom, rockMat, perSide * 2);
-  rocks.receiveShadow = true;
-  const m = new THREE.Matrix4();
-  const q = new THREE.Quaternion();
-  const pos = new THREE.Vector3();
-  const scl = new THREE.Vector3();
-  let i = 0;
   for (const side of [-1, 1]) {
     for (let k = 0; k < perSide; k++) {
       const x = LANE_FROM + k * STEP + (r() - 0.5) * 70;
       const z = side * (CLIFF_OFFSET + 30 + r() * 90);
-      const h = 70 + r() * 110;
-      pos.set(x, h * 0.3, z);
-      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), r() * Math.PI * 2);
-      scl.set(34 + r() * 30, h * 0.42, 32 + r() * 28);
-      rocks.setMatrixAt(i++, m.compose(pos, q, scl));
+      placements.push({ x, z, variant: pick('rock', x), scale: 0.45 + r() * 0.4 });
+      if (r() < 0.3) {
+        const bx = x + (r() - 0.5) * STEP;
+        placements.push({ x: bx, z: z + side * (40 + r() * 60), variant: pick('bush', bx), scale: 0.7 + r() * 0.4 });
+      }
     }
   }
-  rocks.instanceMatrix.needsUpdate = true;
-  group.add(rocks);
 
   // --- treeline behind the rocks ------------------------------------------
-  const treeGeom = track(treeGeometry());
-  const treeMat = track(new THREE.MeshStandardMaterial({ color: 0x24341f, roughness: 1, flatShading: true }));
   const TREE_STEP = 190;
   const rows = 3;
   const perRow = Math.ceil((LANE_TO - LANE_FROM) / TREE_STEP);
-  const trees = new THREE.InstancedMesh(treeGeom, treeMat, perRow * rows * 2);
-  let t = 0;
   for (const side of [-1, 1]) {
     for (let row = 0; row < rows; row++) {
       for (let k = 0; k < perRow; k++) {
         const x = LANE_FROM + k * TREE_STEP + (r() - 0.5) * 150;
         const z = side * (CLIFF_OFFSET + 180 + row * 210 + (r() - 0.5) * 130);
-        const s = 0.8 + r() * 0.7;
-        pos.set(x, 0, z);
-        q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), r() * Math.PI * 2);
-        scl.set(s, s * (0.85 + r() * 0.5), s);
-        trees.setMatrixAt(t++, m.compose(pos, q, scl));
+        placements.push({ x, z, variant: pick('tree', x), scale: 0.72 + r() * 0.28 });
       }
     }
   }
-  trees.instanceMatrix.needsUpdate = true;
-  group.add(trees);
+  for (const mesh of sceneryMeshes(assets.scenery, placements, track)) group.add(mesh);
 
   return {
     group,
     dispose() {
       for (const d of disposables) d.dispose();
-      rocks.dispose();
-      trees.dispose();
     },
   };
 }

@@ -5,3 +5,8 @@ shots
 .DS_Store
 tools/.cache
 *.blend1
+
+# Synty source packs: licensed, never redistributed. Only rendered sheets are committed.
+art_src/synty
+art_src/sprites/build
+__pycache__

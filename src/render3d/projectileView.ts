@@ -30,6 +30,9 @@ const SHOULDER = 78;
  * shoulder the arrow would appear out of her ribs, under the release flash.
  */
 const HERO_LAUNCH = 112;
+/** A tower's bolt leaves from its top, a catapult's stone from the bucket at the top of the throw. */
+const TOWER_LAUNCH = 220;
+const SIEGE_LAUNCH = 130;
 /** Impact height: the middle of a body, not its feet. */
 const CHEST = 70;
 
@@ -104,7 +107,8 @@ export class ProjectileLayer {
 
       let t = this.tracked.get(p.id);
       if (!t) {
-        const l = look(p, world.units.get(p.sourceId));
+        const source = world.units.get(p.sourceId);
+        const l = look(p, source);
         const mesh = new THREE.Mesh(this.geom, this.material(l.color));
         mesh.scale.set(l.radius, l.length, l.radius);
         this.scene.add(mesh);
@@ -115,7 +119,14 @@ export class ProjectileLayer {
           last: new THREE.Vector3(),
           targetId: p.targetId,
           sinceTrail: 0,
-          launch: p.kind === 'hero' ? HERO_LAUNCH : SHOULDER,
+          launch:
+            p.kind === 'hero'
+              ? HERO_LAUNCH
+              : source?.kind === 'tower'
+                ? TOWER_LAUNCH
+                : source?.kind === 'siege_creep'
+                  ? SIEGE_LAUNCH
+                  : SHOULDER,
         };
         this.tracked.set(p.id, t);
       }

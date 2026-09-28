@@ -162,6 +162,11 @@ KayKit skeletons: melee creeps carry a blade and shield, ranged ones a staff
 and a caster's hat. So a creep death is bones, not flesh. The heroes are an
 armoured knight with a two-handed sword and an archer with a bow.
 
+(The prompts were written for those models. The creeps have since become
+sprites of Synty characters: Radiant's are a soldier with sword and shield and
+a mage with a staff, Dire's an undead swordsman and a wraith. Dire's deaths
+are still bones; Radiant's are not, and nobody has re-rolled them yet.)
+
 ## Prompts
 
 Copy each block as is.

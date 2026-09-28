@@ -7,7 +7,7 @@
  * base64 `data:` URL — for one reason: the page is meant to be published
  * somewhere with a strict content-security policy, where the only things it is
  * allowed to pull are scripts from a short CDN allowlist and stylesheets from
- * Google Fonts. A same-origin `fetch()` for the GLB, or a `<script src>` next
+ * Google Fonts. A same-origin `fetch()` for a sprite sheet, or a `<script src>` next
  * to the page, is exactly the kind of request such a policy drops silently.
  * Inlining sidesteps the whole question. The sounds take the page from ~4.5MB
  * to ~11MB, still under the 16MB such hosts allow.
@@ -48,16 +48,14 @@ const escapeClose = (code, tag) => code.split(`</${tag}`).join(`<\\/${tag}`);
 
 const js = escapeClose(readFileSync(join('dist/assets', scripts[0]), 'utf8'), 'script');
 const css = escapeClose(readFileSync(join('dist/assets', styles[0]), 'utf8'), 'style');
-// Every GLB under public/models, keyed by its path under public/ as main.ts
-// asks for it.
-const glbs = ['units', 'heroes'].flatMap((dir) =>
-  readdirSync(`public/models/${dir}`)
-    .filter((f) => f.endsWith('.glb'))
-    .map((f) => `models/${dir}/${f}`),
-);
-const models = Object.fromEntries(
-  glbs.map((p) => [p, `data:model/gltf-binary;base64,${readFileSync(join('public', p)).toString('base64')}`]),
-);
+// Every sprite page, manifest and ground tile under public/sprites, keyed by
+// its path under public/ as the loaders ask for it.
+const models = {};
+for (const f of readdirSync('public/sprites', { recursive: true })) {
+  const path = `sprites/${f.split('\\').join('/')}`;
+  const type = f.endsWith('.png') ? 'image/png' : f.endsWith('.json') ? 'application/json' : null;
+  if (type) models[path] = `data:${type};base64,${readFileSync(join('public', path)).toString('base64')}`;
+}
 // The sounds ride the same map, keyed audio/<file>. The ambience loop is most
 // of their 5MB; the whole page stays well under what a host accepts.
 for (const f of readdirSync('public/audio').filter((f) => f.endsWith('.wav'))) {
@@ -93,7 +91,7 @@ ${css}
 </div>
 
 <script>
-  // The models, inlined. main.ts reads these and hands them to a glTF parser
+  // The sprites and sounds, inlined. main.ts reads these and the loaders decode them
   // rather than fetching them.
   window.__LHT_MODELS__ = ${JSON.stringify(models)};
 </script>
